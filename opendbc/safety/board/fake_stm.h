@@ -3,9 +3,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "opendbc/safety/board/utils.h"
+#include "utils.h"
 
 #define ALLOW_DEBUG
+#define PANDA
 
 void print(const char *a) {
   printf("%s", a);

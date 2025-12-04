@@ -1,6 +1,5 @@
 from opendbc.can import CANPacker
-from opendbc.car import Bus, structs
-from opendbc.car.lateral import apply_std_steer_angle_limits
+from opendbc.car import Bus, apply_std_steer_angle_limits, structs
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.nissan import nissancan
 from opendbc.car.nissan.values import CAR, CarControllerParams
@@ -9,15 +8,15 @@ VisualAlert = structs.CarControl.HUDControl.VisualAlert
 
 
 class CarController(CarControllerBase):
-  def __init__(self, dbc_names, CP, CP_SP):
-    super().__init__(dbc_names, CP, CP_SP)
+  def __init__(self, dbc_names, CP):
+    super().__init__(dbc_names, CP)
     self.car_fingerprint = CP.carFingerprint
 
     self.apply_angle_last = 0
 
     self.packer = CANPacker(dbc_names[Bus.pt])
 
-  def update(self, CC, CC_SP, CS, now_nanos):
+  def update(self, CC, CS, now_nanos):
     actuators = CC.actuators
     hud_control = CC.hudControl
     pcm_cancel_cmd = CC.cruiseControl.cancel

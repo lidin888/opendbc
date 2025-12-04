@@ -9,7 +9,6 @@ import opendbc.safety.tests.common as common
 from opendbc.safety.tests.common import CANPackerPanda
 from functools import partial
 
-
 class SubaruMsg(enum.IntEnum):
   Brake_Status      = 0x13c
   CruiseControl     = 0x240
@@ -42,11 +41,9 @@ def lkas_tx_msgs(alt_bus, lkas_msg=SubaruMsg.ES_LKAS):
           [SubaruMsg.ES_LKAS_State,     SUBARU_MAIN_BUS],
           [SubaruMsg.ES_Infotainment,   SUBARU_MAIN_BUS]]
 
-
 def long_tx_msgs(alt_bus):
   return [[SubaruMsg.ES_Brake,          alt_bus],
           [SubaruMsg.ES_Status,         alt_bus]]
-
 
 def gen2_long_additional_tx_msgs():
   return [[SubaruMsg.ES_UDS_Request,    SUBARU_CAM_BUS],
@@ -54,18 +51,16 @@ def gen2_long_additional_tx_msgs():
           [SubaruMsg.ES_STATIC_1,       SUBARU_MAIN_BUS],
           [SubaruMsg.ES_STATIC_2,       SUBARU_MAIN_BUS]]
 
-
 def fwd_blacklisted_addr(lkas_msg=SubaruMsg.ES_LKAS):
   return {SUBARU_CAM_BUS: [lkas_msg, SubaruMsg.ES_DashStatus, SubaruMsg.ES_LKAS_State, SubaruMsg.ES_Infotainment]}
 
-
 class TestSubaruSafetyBase(common.PandaCarSafetyTest):
   FLAGS = 0
-  RELAY_MALFUNCTION_ADDRS = {SUBARU_MAIN_BUS: (SubaruMsg.ES_LKAS, SubaruMsg.ES_DashStatus, SubaruMsg.ES_LKAS_State,
-                                               SubaruMsg.ES_Infotainment)}
+  RELAY_MALFUNCTION_ADDRS = {SUBARU_MAIN_BUS: (SubaruMsg.ES_LKAS,)}
   FWD_BLACKLISTED_ADDRS = fwd_blacklisted_addr()
 
   MAX_RT_DELTA = 940
+  RT_INTERVAL = 250000
 
   DRIVER_TORQUE_ALLOWANCE = 60
   DRIVER_TORQUE_FACTOR = 50
@@ -110,21 +105,6 @@ class TestSubaruSafetyBase(common.PandaCarSafetyTest):
   def _pcm_status_msg(self, enable):
     values = {"Cruise_Activated": enable}
     return self.packer.make_can_msg_panda("CruiseControl", self.ALT_MAIN_BUS, values)
-
-  def _lkas_button_msg(self, lkas_pressed=False, lkas_hud=0):
-    values = {"LKAS_Dash_State": 2 if lkas_pressed else lkas_hud}
-    return self.packer.make_can_msg_panda("ES_LKAS_State", SUBARU_CAM_BUS, values)
-
-  def test_enable_control_allowed_with_mads_button(self):
-    for enable_mads in (True, False):
-      with self.subTest("enable_mads", mads_enabled=enable_mads):
-        for mads_button_press in range(4):
-          with self.subTest("mads_button_press", button_state=mads_button_press):
-            self.safety.set_mads_params(enable_mads, False, False)
-
-            self._rx(self._lkas_button_msg(False, mads_button_press))
-            self.assertEqual(enable_mads and mads_button_press in range(1, 4),
-                             self.safety.get_controls_allowed_lat())
 
 
 class TestSubaruStockLongitudinalSafetyBase(TestSubaruSafetyBase):
@@ -175,12 +155,12 @@ class TestSubaruLongitudinalSafetyBase(TestSubaruSafetyBase, common.Longitudinal
 class TestSubaruTorqueSafetyBase(TestSubaruSafetyBase, common.DriverTorqueSteeringSafetyTest, common.SteerRequestCutSafetyTest):
   MAX_RATE_UP = 50
   MAX_RATE_DOWN = 70
-  MAX_TORQUE_LOOKUP = [0], [2047]
+  MAX_TORQUE = 2047
 
   # Safety around steering req bit
   MIN_VALID_STEERING_FRAMES = 7
   MAX_INVALID_STEERING_FRAMES = 1
-  STEER_STEP = 2
+  MIN_VALID_STEERING_RT_INTERVAL = 144000
 
   def _torque_cmd_msg(self, torque, steer_req=1):
     values = {"LKAS_Output": torque, "LKAS_Request": steer_req}
@@ -198,7 +178,7 @@ class TestSubaruGen2TorqueSafetyBase(TestSubaruTorqueSafetyBase):
 
   MAX_RATE_UP = 40
   MAX_RATE_DOWN = 40
-  MAX_TORQUE_LOOKUP = [0], [1000]
+  MAX_TORQUE = 1000
 
 
 class TestSubaruGen2TorqueStockLongitudinalSafety(TestSubaruStockLongitudinalSafetyBase, TestSubaruGen2TorqueSafetyBase):
@@ -209,19 +189,11 @@ class TestSubaruGen2TorqueStockLongitudinalSafety(TestSubaruStockLongitudinalSaf
 class TestSubaruGen1LongitudinalSafety(TestSubaruLongitudinalSafetyBase, TestSubaruTorqueSafetyBase):
   FLAGS = SubaruSafetyFlags.LONG
   TX_MSGS = lkas_tx_msgs(SUBARU_MAIN_BUS) + long_tx_msgs(SUBARU_MAIN_BUS)
-  RELAY_MALFUNCTION_ADDRS = {SUBARU_MAIN_BUS: (SubaruMsg.ES_LKAS, SubaruMsg.ES_DashStatus, SubaruMsg.ES_LKAS_State,
-                                               SubaruMsg.ES_Infotainment, SubaruMsg.ES_Brake, SubaruMsg.ES_Status,
-                                               SubaruMsg.ES_Distance)}
 
 
 class TestSubaruGen2LongitudinalSafety(TestSubaruLongitudinalSafetyBase, TestSubaruGen2TorqueSafetyBase):
   FLAGS = SubaruSafetyFlags.LONG | SubaruSafetyFlags.GEN2
   TX_MSGS = lkas_tx_msgs(SUBARU_ALT_BUS) + long_tx_msgs(SUBARU_ALT_BUS) + gen2_long_additional_tx_msgs()
-  FWD_BLACKLISTED_ADDRS = {2: [SubaruMsg.ES_LKAS, SubaruMsg.ES_DashStatus, SubaruMsg.ES_LKAS_State,
-                               SubaruMsg.ES_Infotainment]}
-  RELAY_MALFUNCTION_ADDRS = {SUBARU_MAIN_BUS: (SubaruMsg.ES_LKAS, SubaruMsg.ES_DashStatus, SubaruMsg.ES_LKAS_State,
-                                               SubaruMsg.ES_Infotainment),
-                             SUBARU_ALT_BUS: (SubaruMsg.ES_Brake, SubaruMsg.ES_Status, SubaruMsg.ES_Distance)}
 
   def _rdbi_msg(self, did: int):
     return b'\x03\x22' + did.to_bytes(2) + b'\x00\x00\x00\x00'

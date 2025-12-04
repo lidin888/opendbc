@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from opendbc.car import get_safety_config, structs
 from opendbc.car.common.conversions import Conversions as CV
+from opendbc.car.mazda.values import CAR, LKAS_LIMITS
 from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.mazda.carcontroller import CarController
 from opendbc.car.mazda.carstate import CarState
@@ -28,12 +29,5 @@ class CarInterface(CarInterfaceBase):
       ret.minSteerSpeed = LKAS_LIMITS.DISABLE_SPEED * CV.KPH_TO_MS
 
     ret.centerToFront = ret.wheelbase * 0.41
-
-    return ret
-
-  @staticmethod
-  def _get_params_sp(stock_cp: structs.CarParams, ret: structs.CarParamsSP, candidate, fingerprint: dict[int, dict[int, int]],
-                     car_fw: list[structs.CarParams.CarFw], alpha_long: bool, docs: bool) -> structs.CarParamsSP:
-    ret.intelligentCruiseButtonManagementAvailable = True
 
     return ret

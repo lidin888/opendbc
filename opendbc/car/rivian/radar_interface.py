@@ -8,15 +8,14 @@ from opendbc.car.rivian.values import DBC
 RADAR_START_ADDR = 0x500
 RADAR_MSG_COUNT = 32
 
-
 def get_radar_can_parser(CP):
   messages = [(f"RADAR_TRACK_{addr:x}", 20) for addr in range(RADAR_START_ADDR, RADAR_START_ADDR + RADAR_MSG_COUNT)]
   return CANParser(DBC[CP.carFingerprint][Bus.radar], messages, 1)
 
 
 class RadarInterface(RadarInterfaceBase):
-  def __init__(self, CP, CP_SP):
-    super().__init__(CP, CP_SP)
+  def __init__(self, CP):
+    super().__init__(CP)
     self.updated_messages = set()
     self.trigger_msg = RADAR_START_ADDR + RADAR_MSG_COUNT - 1
     self.track_id = 0
@@ -63,7 +62,7 @@ class RadarInterface(RadarInterfaceBase):
         self.pts[addr].yRel = 0.5 * -math.sin(azimuth) * msg['LONG_DIST']
         self.pts[addr].vRel = msg['REL_SPEED']
         self.pts[addr].aRel = float('nan')
-        self.pts[addr].yvRel = float('nan')
+        self.pts[addr].yvRel = 0 #float('nan')
 
       else:
         del self.pts[addr]

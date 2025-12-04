@@ -9,7 +9,6 @@ RADAR_MSGS_D = list(range(0x2a2, 0x2b4+2, 2))  # d_ messages
 LAST_MSG = max(RADAR_MSGS_C + RADAR_MSGS_D)
 NUMBER_MSGS = len(RADAR_MSGS_C) + len(RADAR_MSGS_D)
 
-
 def _create_radar_can_parser(car_fingerprint):
   if Bus.radar not in DBC[car_fingerprint]:
     return None
@@ -29,7 +28,6 @@ def _create_radar_can_parser(car_fingerprint):
 
   return CANParser(DBC[car_fingerprint][Bus.radar], messages, 1)
 
-
 def _address_to_track(address):
   if address in RADAR_MSGS_C:
     return (address - RADAR_MSGS_C[0]) // 2
@@ -37,10 +35,9 @@ def _address_to_track(address):
     return (address - RADAR_MSGS_D[0]) // 2
   raise ValueError("radar received unexpected address %d" % address)
 
-
 class RadarInterface(RadarInterfaceBase):
-  def __init__(self, CP, CP_SP):
-    super().__init__(CP, CP_SP)
+  def __init__(self, CP):
+    super().__init__(CP)
     self.rcp = _create_radar_can_parser(CP.carFingerprint)
     self.updated_messages = set()
     self.trigger_msg = LAST_MSG
@@ -67,7 +64,7 @@ class RadarInterface(RadarInterfaceBase):
         self.pts[trackId] = structs.RadarData.RadarPoint()
         self.pts[trackId].trackId = trackId
         self.pts[trackId].aRel = float('nan')
-        self.pts[trackId].yvRel = float('nan')
+        self.pts[trackId].yvRel = 0 #float('nan')
         self.pts[trackId].measured = True
 
       if 'LONG_DIST' in cpt:  # c_* message
@@ -77,6 +74,7 @@ class RadarInterface(RadarInterfaceBase):
         self.pts[trackId].yRel = cpt['LAT_DIST']  # in car frame's y axis, left is positive
       else:  # d_* message
         self.pts[trackId].vRel = cpt['REL_SPEED']
+        self.pts[trackId].vLead = self.pts[trackId].vRel + self.v_ego
 
     # We want a list, not a dictionary. Filter out LONG_DIST==0 because that means it's not valid.
     ret.points = [x for x in self.pts.values() if x.dRel != 0]

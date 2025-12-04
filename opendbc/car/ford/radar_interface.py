@@ -90,8 +90,8 @@ def _create_delphi_mrr_radar_can_parser(CP) -> CANParser:
 
 
 class RadarInterface(RadarInterfaceBase):
-  def __init__(self, CP, CP_SP):
-    super().__init__(CP, CP_SP)
+  def __init__(self, CP):
+    super().__init__(CP)
 
     self.points: list[list[float]] = []
     self.clusters: list[Cluster] = []
@@ -161,8 +161,9 @@ class RadarInterface(RadarInterfaceBase):
         self.pts[ii].dRel = cpt['X_Rel']  # from front of car
         self.pts[ii].yRel = cpt['X_Rel'] * cpt['Angle'] * CV.DEG_TO_RAD  # in car frame's y axis, left is positive
         self.pts[ii].vRel = cpt['V_Rel']
+        self.pts[ii].vLead = self.pts[ii].vRel + self.v_ego
         self.pts[ii].aRel = float('nan')
-        self.pts[ii].yvRel = float('nan')
+        self.pts[ii].yvRel = 0# float('nan')
         self.pts[ii].measured = True
       else:
         if ii in self.pts:
@@ -257,11 +258,12 @@ class RadarInterface(RadarInterfaceBase):
       self.clusters.append(Cluster(dRel=dRel, yRel=yRel, vRel=vRel, trackId=track_id))
 
       if idx not in self.pts:
-        self.pts[idx] = structs.RadarData.RadarPoint(measured=True, aRel=float('nan'), yvRel=float('nan'))
+        self.pts[idx] = structs.RadarData.RadarPoint(measured=True, aRel=float('nan'), yvRel=0)
 
       self.pts[idx].dRel = min_dRel
       self.pts[idx].yRel = yRel
       self.pts[idx].vRel = vRel
+      self.pts[idx].vLead = vRel + self.v_ego
       self.pts[idx].trackId = track_id
 
     for idx in range(len(points_by_track_id), len(self.pts)):

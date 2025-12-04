@@ -12,8 +12,8 @@ TORQUE_SAMPLES = 12
 
 
 class CarState(CarStateBase):
-  def __init__(self, CP, CP_SP):
-    super().__init__(CP, CP_SP)
+  def __init__(self, CP):
+    super().__init__(CP)
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
 
     self.lkas_hud_msg = {}
@@ -24,35 +24,38 @@ class CarState(CarStateBase):
 
     self.distance_button = 0
 
-  def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
+  def update(self, can_parsers) -> structs.CarState:
     cp = can_parsers[Bus.pt]
     cp_cam = can_parsers[Bus.cam]
     cp_adas = can_parsers[Bus.adas]
 
     ret = structs.CarState()
-    ret_sp = structs.CarStateSP()
 
     prev_distance_button = self.distance_button
     self.distance_button = cp.vl["CRUISE_THROTTLE"]["FOLLOW_DISTANCE_BUTTON"]
 
     if self.CP.carFingerprint in (CAR.NISSAN_ROGUE, CAR.NISSAN_XTRAIL, CAR.NISSAN_ALTIMA):
-      ret.gasPressed = bool(cp.vl["GAS_PEDAL"]["GAS_PEDAL"] > 3)
+      ret.gas = cp.vl["GAS_PEDAL"]["GAS_PEDAL"]
     elif self.CP.carFingerprint in (CAR.NISSAN_LEAF, CAR.NISSAN_LEAF_IC):
-      ret.gasPressed = bool(cp.vl["CRUISE_THROTTLE"]["GAS_PEDAL"] > 3)
+      ret.gas = cp.vl["CRUISE_THROTTLE"]["GAS_PEDAL"]
+
+    ret.gasPressed = bool(ret.gas > 3)
 
     if self.CP.carFingerprint in (CAR.NISSAN_ROGUE, CAR.NISSAN_XTRAIL, CAR.NISSAN_ALTIMA):
       ret.brakePressed = bool(cp.vl["DOORS_LIGHTS"]["USER_BRAKE_PRESSED"])
     elif self.CP.carFingerprint in (CAR.NISSAN_LEAF, CAR.NISSAN_LEAF_IC):
       ret.brakePressed = bool(cp.vl["CRUISE_THROTTLE"]["USER_BRAKE_PRESSED"])
 
-    fl = cp.vl["WHEEL_SPEEDS_FRONT"]["WHEEL_SPEED_FL"] * CV.KPH_TO_MS
-    fr = cp.vl["WHEEL_SPEEDS_FRONT"]["WHEEL_SPEED_FR"] * CV.KPH_TO_MS
-    rl = cp.vl["WHEEL_SPEEDS_REAR"]["WHEEL_SPEED_RL"] * CV.KPH_TO_MS
-    rr = cp.vl["WHEEL_SPEEDS_REAR"]["WHEEL_SPEED_RR"] * CV.KPH_TO_MS
+    ret.wheelSpeeds = self.get_wheel_speeds(
+      cp.vl["WHEEL_SPEEDS_FRONT"]["WHEEL_SPEED_FL"],
+      cp.vl["WHEEL_SPEEDS_FRONT"]["WHEEL_SPEED_FR"],
+      cp.vl["WHEEL_SPEEDS_REAR"]["WHEEL_SPEED_RL"],
+      cp.vl["WHEEL_SPEEDS_REAR"]["WHEEL_SPEED_RR"],
+    )
     # safety uses the rear wheel speeds for the speed measurement and angle limiting
-    ret.vEgoRaw = (rl + rr) / 2.0
+    ret.vEgoRaw = (ret.wheelSpeeds.rl + ret.wheelSpeeds.rr) / 2.0
 
-    v_ego_raw_full = (fl + fr + rl + rr) / 4.0
+    v_ego_raw_full = (ret.wheelSpeeds.fl + ret.wheelSpeeds.fr + ret.wheelSpeeds.rl + ret.wheelSpeeds.rr) / 4.0
     ret.vEgo, ret.aEgo = self.update_speed_kf(v_ego_raw_full)
     ret.standstill = cp.vl["WHEEL_SPEEDS_REAR"]["WHEEL_SPEED_RL"] == 0.0 and cp.vl["WHEEL_SPEEDS_REAR"]["WHEEL_SPEED_RR"] == 0.0
 
@@ -129,10 +132,10 @@ class CarState(CarStateBase):
 
     ret.buttonEvents = create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise})
 
-    return ret, ret_sp
+    return ret
 
   @staticmethod
-  def get_can_parsers(CP, CP_SP):
+  def get_can_parsers(CP):
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 1 if CP.carFingerprint == CAR.NISSAN_ALTIMA else 0),
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0 if CP.carFingerprint == CAR.NISSAN_ALTIMA else 1),

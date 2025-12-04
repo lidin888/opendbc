@@ -12,8 +12,8 @@ def _create_nidec_can_parser(car_fingerprint):
 
 
 class RadarInterface(RadarInterfaceBase):
-  def __init__(self, CP, CP_SP):
-    super().__init__(CP, CP_SP)
+  def __init__(self, CP):
+    super().__init__(CP)
     self.track_id = 0
     self.radar_fault = False
     self.radar_wrong_config = False
@@ -60,8 +60,9 @@ class RadarInterface(RadarInterfaceBase):
         self.pts[ii].dRel = cpt['LONG_DIST']  # from front of car
         self.pts[ii].yRel = -cpt['LAT_DIST']  # in car frame's y axis, left is positive
         self.pts[ii].vRel = cpt['REL_SPEED']
+        self.pts[ii].vLead = self.pts[ii].vRel + self.v_ego
         self.pts[ii].aRel = float('nan')
-        self.pts[ii].yvRel = float('nan')
+        self.pts[ii].yvRel = 0# float('nan')
         self.pts[ii].measured = True
       else:
         if ii in self.pts:

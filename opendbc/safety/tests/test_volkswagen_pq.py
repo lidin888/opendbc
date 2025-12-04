@@ -19,18 +19,26 @@ MSG_ACC_GRA_ANZEIGE = 0x56A   # TX by OP, ACC HUD
 MSG_LDW_1 = 0x5BE             # TX by OP, Lane line recognition and text alerts
 
 
-class TestVolkswagenPqSafetyBase(common.PandaCarSafetyTest, common.DriverTorqueSteeringSafetyTest):
+class TestVolkswagenPqSafety(common.PandaCarSafetyTest, common.DriverTorqueSteeringSafetyTest):
   cruise_engaged = False
 
-  RELAY_MALFUNCTION_ADDRS = {0: (MSG_HCA_1, MSG_LDW_1)}
+  RELAY_MALFUNCTION_ADDRS = {0: (MSG_HCA_1,)}
 
   MAX_RATE_UP = 6
   MAX_RATE_DOWN = 10
-  MAX_TORQUE_LOOKUP = [0], [300]
+  MAX_TORQUE = 300
   MAX_RT_DELTA = 113
+  RT_INTERVAL = 250000
 
   DRIVER_TORQUE_ALLOWANCE = 80
   DRIVER_TORQUE_FACTOR = 3
+
+  @classmethod
+  def setUpClass(cls):
+    if cls.__name__ == "TestVolkswagenPqSafety":
+      cls.packer = None
+      cls.safety = None
+      raise unittest.SkipTest
 
   def _set_prev_torque(self, t):
     self.safety.set_desired_torque_last(t)
@@ -38,7 +46,7 @@ class TestVolkswagenPqSafetyBase(common.PandaCarSafetyTest, common.DriverTorqueS
 
   # Ego speed (Bremse_1)
   def _speed_msg(self, speed):
-    values = {"BR1_Rad_kmh": speed}
+    values = {"Geschwindigkeit_neu__Bremse_1_": speed}
     return self.packer.make_can_msg_panda("Bremse_1", 0, values)
 
   # Brake light switch (shared message Motor_2)
@@ -69,8 +77,8 @@ class TestVolkswagenPqSafetyBase(common.PandaCarSafetyTest, common.DriverTorqueS
   # ACC engagement and brake light switch status
   # Called indirectly for compatibility with common.py tests
   def _motor_2_msg(self, brake_pressed=False, cruise_engaged=False):
-    values = {"MO2_BLS": brake_pressed,
-              "MO2_Sta_GRA": cruise_engaged}
+    values = {"Bremslichtschalter": brake_pressed,
+              "GRA_Status": cruise_engaged}
     return self.packer.make_can_msg_panda("Motor_2", 0, values)
 
   # ACC main switch status
@@ -109,13 +117,13 @@ class TestVolkswagenPqSafetyBase(common.PandaCarSafetyTest, common.DriverTorqueS
     self.assertEqual(0, self.safety.get_torque_driver_min())
 
 
-class TestVolkswagenPqStockSafety(TestVolkswagenPqSafetyBase):
+class TestVolkswagenPqStockSafety(TestVolkswagenPqSafety):
   # Transmit of GRA_Neu is allowed on bus 0 and 2 to keep compatibility with gateway and camera integration
   TX_MSGS = [[MSG_HCA_1, 0], [MSG_GRA_NEU, 0], [MSG_GRA_NEU, 2], [MSG_LDW_1, 0]]
   FWD_BLACKLISTED_ADDRS = {2: [MSG_HCA_1, MSG_LDW_1]}
 
   def setUp(self):
-    self.packer = CANPackerPanda("vw_pq")
+    self.packer = CANPackerPanda("vw_golf_mk4")
     self.safety = libsafety_py.libsafety
     self.safety.set_safety_hooks(CarParams.SafetyModel.volkswagenPq, 0)
     self.safety.init_tests()
@@ -130,14 +138,13 @@ class TestVolkswagenPqStockSafety(TestVolkswagenPqSafetyBase):
     self.assertTrue(self._tx(self._button_msg(resume=True)))
 
 
-class TestVolkswagenPqLongSafety(TestVolkswagenPqSafetyBase, common.LongitudinalAccelSafetyTest):
+class TestVolkswagenPqLongSafety(TestVolkswagenPqSafety, common.LongitudinalAccelSafetyTest):
   TX_MSGS = [[MSG_HCA_1, 0], [MSG_LDW_1, 0], [MSG_ACC_SYSTEM, 0], [MSG_ACC_GRA_ANZEIGE, 0]]
   FWD_BLACKLISTED_ADDRS = {2: [MSG_HCA_1, MSG_LDW_1, MSG_ACC_SYSTEM, MSG_ACC_GRA_ANZEIGE]}
-  RELAY_MALFUNCTION_ADDRS = {0: (MSG_HCA_1, MSG_LDW_1, MSG_ACC_SYSTEM, MSG_ACC_GRA_ANZEIGE)}
   INACTIVE_ACCEL = 3.01
 
   def setUp(self):
-    self.packer = CANPackerPanda("vw_pq")
+    self.packer = CANPackerPanda("vw_golf_mk4")
     self.safety = libsafety_py.libsafety
     self.safety.set_safety_hooks(CarParams.SafetyModel.volkswagenPq, VolkswagenSafetyFlags.LONG_CONTROL)
     self.safety.init_tests()
@@ -186,7 +193,6 @@ class TestVolkswagenPqLongSafety(TestVolkswagenPqSafetyBase, common.Longitudinal
     for enabled_status in (5, 7):
       self.assertTrue(self._tx(self._torque_cmd_msg(self.MAX_RATE_UP, steer_req=1, hca_status=enabled_status)),
                       f"torque cmd rejected with {enabled_status=}")
-
 
 if __name__ == "__main__":
   unittest.main()

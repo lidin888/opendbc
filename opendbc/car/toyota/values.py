@@ -3,11 +3,10 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, IntFlag
 
-from opendbc.car import Bus, CarSpecs, PlatformConfig, Platforms
-from opendbc.car.lateral import AngleSteeringLimits
+from opendbc.car import Bus, CarSpecs, PlatformConfig, Platforms, AngleSteeringLimits
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.structs import CarParams
-from opendbc.car.docs_definitions import CarFootnote, CarDocs, Column, CarParts, CarHarness, SupportType
+from opendbc.car.docs_definitions import CarFootnote, CarDocs, Column, CarParts, CarHarness
 from opendbc.car.fw_query_definitions import FwQueryConfig, Request, StdQueries
 
 Ecu = CarParams.Ecu
@@ -61,6 +60,7 @@ class ToyotaSafetyFlags(IntFlag):
 class ToyotaFlags(IntFlag):
   # Detected flags
   HYBRID = 1
+  SMART_DSU = 2
   DISABLE_RADAR = 4
 
   # Static flags
@@ -71,16 +71,11 @@ class ToyotaFlags(IntFlag):
   # these cars use the Lane Tracing Assist (LTA) message for lateral control
   ANGLE_CONTROL = 128
   NO_STOP_TIMER = 256
-  # these cars are speculated to allow stop and go when the DSU is unplugged or disabled with sDSU
+  # these cars are speculated to allow stop and go when the DSU is unplugged
   SNG_WITHOUT_DSU = 512
   # these cars can utilize 2.0 m/s^2
   RAISED_ACCEL_LIMIT = 1024
   SECOC = 2048
-
-
-def dbc_dict(pt, radar):
-  return {Bus.pt: pt, Bus.radar: radar}
-
 
 class Footnote(Enum):
   CAMRY = CarFootnote(
@@ -93,12 +88,8 @@ class ToyotaCarDocs(CarDocs):
   package: str = "All"
   car_parts: CarParts = field(default_factory=CarParts.common([CarHarness.toyota_a]))
 
-
-@dataclass
-class ToyotaCommunityCarDocs(ToyotaCarDocs):
-  support_type: SupportType = SupportType.COMMUNITY
-  support_link: str = "#community"
-
+def dbc_dict(pt, radar):
+  return {Bus.pt: pt, Bus.radar: radar}
 
 @dataclass
 class ToyotaTSS2PlatformConfig(PlatformConfig):
@@ -110,12 +101,14 @@ class ToyotaTSS2PlatformConfig(PlatformConfig):
     if self.flags & ToyotaFlags.RADAR_ACC:
       self.dbc_dict = {Bus.pt: 'toyota_nodsu_pt_generated'}
 
-
 @dataclass
 class ToyotaSecOCPlatformConfig(PlatformConfig):
   dbc_dict: dict = field(default_factory=lambda: dbc_dict('toyota_secoc_pt_generated', 'toyota_tss2_adas'))
 
   def init(self):
+    # don't expose car docs until SecOC cars can be suppressed from the comma website
+    self.car_docs = []
+
     self.flags |= ToyotaFlags.TSS2 | ToyotaFlags.NO_STOP_TIMER | ToyotaFlags.NO_DSU | ToyotaFlags.SECOC
 
     if self.flags & ToyotaFlags.RADAR_ACC:
@@ -286,11 +279,15 @@ class CAR(Platforms):
     flags=ToyotaFlags.RADAR_ACC | ToyotaFlags.ANGLE_CONTROL,
   )
   TOYOTA_RAV4_PRIME = ToyotaSecOCPlatformConfig(
-    [ToyotaCommunityCarDocs("Toyota RAV4 Prime 2021-23", min_enable_speed=MIN_ACC_SPEED)],
+    [ToyotaCarDocs("Toyota RAV4 Prime 2021-23", min_enable_speed=MIN_ACC_SPEED)],
     CarSpecs(mass=4372. * CV.LB_TO_KG, wheelbase=2.68, steerRatio=16.88, tireStiffnessFactor=0.5533),
   )
+  TOYOTA_WILDLANDER = ToyotaSecOCPlatformConfig(
+    [ToyotaCarDocs("Toyota Wildlander PHEV 2021", min_enable_speed=MIN_ACC_SPEED)],
+    CarSpecs(mass=4155. * CV.LB_TO_KG, wheelbase=2.69, steerRatio=16.88, tireStiffnessFactor=0.5533),
+  )
   TOYOTA_YARIS = ToyotaSecOCPlatformConfig(
-    [ToyotaCommunityCarDocs("Toyota Yaris (Non-US only) 2020, 2023", min_enable_speed=MIN_ACC_SPEED)],
+    [ToyotaCarDocs("Toyota Yaris 2023 (Non-US only)", min_enable_speed=MIN_ACC_SPEED)],
     CarSpecs(mass=1170, wheelbase=2.55, steerRatio=14.80, tireStiffnessFactor=0.5533),
     flags=ToyotaFlags.RADAR_ACC,
   )
@@ -305,7 +302,7 @@ class CAR(Platforms):
     flags=ToyotaFlags.NO_STOP_TIMER,
   )
   TOYOTA_SIENNA_4TH_GEN = ToyotaSecOCPlatformConfig(
-    [ToyotaCommunityCarDocs("Toyota Sienna 2021-23", min_enable_speed=MIN_ACC_SPEED)],
+    [ToyotaCarDocs("Toyota Sienna 2021-23", min_enable_speed=MIN_ACC_SPEED)],
     CarSpecs(mass=4625. * CV.LB_TO_KG, wheelbase=3.06, steerRatio=17.8, tireStiffnessFactor=0.444),
   )
 
@@ -356,7 +353,7 @@ class CAR(Platforms):
     LEXUS_NX.specs,
   )
   LEXUS_LC_TSS2 = ToyotaTSS2PlatformConfig(
-    [ToyotaCarDocs("Lexus LC 2024-25")],
+    [ToyotaCarDocs("Lexus LC 2024")],
     CarSpecs(mass=4500. * CV.LB_TO_KG, wheelbase=2.87, steerRatio=13.0, tireStiffnessFactor=0.444),
   )
   LEXUS_RC = PlatformConfig(
@@ -399,7 +396,7 @@ class CAR(Platforms):
 
 # (addr, cars, bus, 1/freq*100, vl)
 STATIC_DSU_MSGS = [
-  (0x128, (CAR.TOYOTA_PRIUS, CAR.TOYOTA_RAV4H, CAR.LEXUS_RX, CAR.LEXUS_NX, CAR.TOYOTA_RAV4, CAR.TOYOTA_COROLLA, CAR.TOYOTA_AVALON),
+  (0x128, (CAR.TOYOTA_PRIUS, CAR.TOYOTA_RAV4H, CAR.LEXUS_RX, CAR.LEXUS_NX, CAR.TOYOTA_RAV4, CAR.TOYOTA_COROLLA, CAR.TOYOTA_AVALON), \
                                                                                                                       1, 3, b'\xf4\x01\x90\x83\x00\x37'),
   (0x128, (CAR.TOYOTA_HIGHLANDER, CAR.TOYOTA_SIENNA, CAR.LEXUS_CTH, CAR.LEXUS_ES), 1,   3, b'\x03\x00\x20\x00\x00\x52'),
   (0x141, (CAR.TOYOTA_PRIUS, CAR.TOYOTA_RAV4H, CAR.LEXUS_RX, CAR.LEXUS_NX, CAR.TOYOTA_RAV4, CAR.TOYOTA_COROLLA, CAR.TOYOTA_HIGHLANDER, CAR.TOYOTA_AVALON,
@@ -608,6 +605,7 @@ FW_QUERY_CONFIG = FwQueryConfig(
   match_fw_to_car_fuzzy=match_fw_to_car_fuzzy,
 )
 
+
 STEER_THRESHOLD = 100
 
 # These cars have non-standard EPS torque scale factors. All others are 73
@@ -633,3 +631,12 @@ SECOC_CAR = CAR.with_flags(ToyotaFlags.SECOC)
 NO_STOP_TIMER_CAR = CAR.with_flags(ToyotaFlags.NO_STOP_TIMER)
 
 DBC = CAR.create_dbc_map()
+
+if __name__ == "__main__":
+  cars = []
+  for platform in CAR:
+    for doc in platform.config.car_docs:
+      cars.append(doc.name)
+  cars.sort()
+  for c in cars:
+    print(c)

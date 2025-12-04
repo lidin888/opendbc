@@ -11,7 +11,8 @@ from opendbc.car.mock.values import CAR as MOCK
 from opendbc.car.values import BRANDS
 from opendbc.car.vin import get_vin, is_valid_vin, VIN_UNKNOWN
 
-from opendbc.sunnypilot.car.interfaces import setup_interfaces as sunnypilot_interfaces
+from common.params import Params
+
 
 FRAME_FINGERPRINT = 100  # 1s
 
@@ -84,9 +85,8 @@ def can_fingerprint(can_recv: CanRecvCallable) -> tuple[str | None, dict[int, di
 
 # **** for use live only ****
 def fingerprint(can_recv: CanRecvCallable, can_send: CanSendCallable, set_obd_multiplexing: ObdCallback, num_pandas: int,
-                cached_params: CarParamsT | None,
-                fixed_fingerprint: str | None) -> tuple[str | None, dict, str, list[CarParams.CarFw], CarParams.FingerprintSource, bool]:
-  fixed_fingerprint = fixed_fingerprint or os.environ.get('FINGERPRINT', "")
+                cached_params: CarParamsT | None) -> tuple[str | None, dict, str, list[CarParams.CarFw], CarParams.FingerprintSource, bool]:
+  fixed_fingerprint = os.environ.get('FINGERPRINT', "")
   skip_fw_query = os.environ.get('SKIP_FW_QUERY', False)
   disable_fw_cache = os.environ.get('DISABLE_FW_CACHE', False)
   ecu_rx_addrs = set()
@@ -152,14 +152,88 @@ def fingerprint(can_recv: CanRecvCallable, can_send: CanSendCallable, set_obd_mu
 
 
 def get_car(can_recv: CanRecvCallable, can_send: CanSendCallable, set_obd_multiplexing: ObdCallback, alpha_long_allowed: bool,
-            is_release: bool, num_pandas: int = 1, cached_params: CarParamsT | None = None,
-            fixed_fingerprint: str | None = None, init_params_list_sp: list[dict[str, str]] = None):
-  candidate, fingerprints, vin, car_fw, source, exact_match = fingerprint(can_recv, can_send, set_obd_multiplexing, num_pandas, cached_params,
-                                                                          fixed_fingerprint)
+            is_release: bool, num_pandas: int = 1, cached_params: CarParamsT | None = None):
+  candidate, fingerprints, vin, car_fw, source, exact_match = fingerprint(can_recv, can_send, set_obd_multiplexing, num_pandas, cached_params)
 
   if candidate is None:
     carlog.error({"event": "car doesn't match any fingerprints", "fingerprints": repr(fingerprints)})
     candidate = "MOCK"
+
+  selected_car = Params().get("CarSelected3")
+  if selected_car:
+    def find_car(name: str):
+      from opendbc.car.hyundai.values import CAR as HYUNDAI
+      from opendbc.car.gm.values import CAR as GM
+      from opendbc.car.toyota.values import CAR as TOYOTA
+      from opendbc.car.mazda.values import CAR as MAZDA
+      from opendbc.car.ford.values import CAR as FORD
+      from opendbc.car.byd.values import CAR as BYD
+      from opendbc.car.rivian.values import CAR as RIVIAN
+      from opendbc.car.subaru.values import CAR as SUBARU
+      from opendbc.car.nissan.values import CAR as NISSAN
+      from opendbc.car.tesla.values import CAR as TESLA
+      from opendbc.car.chrysler.values import CAR as CHRYSLER
+      from opendbc.car.volkswagen.values import CAR as VOLKSWAGEN
+      from opendbc.car.honda.values import CAR as HONDA
+      for platform in GM:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in TOYOTA:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in HYUNDAI:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in MAZDA:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in FORD:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in BYD:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in RIVIAN:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in SUBARU:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in NISSAN:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in TESLA:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in CHRYSLER:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in VOLKSWAGEN:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      for platform in HONDA:
+        for doc in platform.config.car_docs:
+          if name == doc.name:
+            return platform
+      return None
+    found_car = find_car(selected_car.decode("utf-8"))
+    if found_car is not None:
+      candidate = found_car
+
+  print(f"SelectedCar = {candidate}")
+  Params().put("CarName", candidate)
 
   CarInterface = interfaces[candidate]
   CP: CarParams = CarInterface.get_params(candidate, fingerprints, car_fw, alpha_long_allowed, is_release, docs=False)
@@ -167,11 +241,10 @@ def get_car(can_recv: CanRecvCallable, can_send: CanSendCallable, set_obd_multip
   CP.carFw = car_fw
   CP.fingerprintSource = source
   CP.fuzzyFingerprint = not exact_match
-  CP_SP = CarInterface.get_params_sp(CP, candidate, fingerprints, car_fw, alpha_long_allowed, docs=False)
 
-  sunnypilot_interfaces(CarInterface, CP, CP_SP, init_params_list_sp, can_recv, can_send)
+  print("Carrot GitBranch = {}, {}".format(Params().get("GitBranch"), Params().get("GitCommitDate")))
 
-  return interfaces[CP.carFingerprint](CP, CP_SP)
+  return interfaces[CP.carFingerprint](CP)
 
 
 def get_demo_car_params():

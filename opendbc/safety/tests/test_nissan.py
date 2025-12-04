@@ -2,7 +2,6 @@
 import unittest
 
 from opendbc.car.nissan.values import NissanSafetyFlags
-from opendbc.sunnypilot.car.nissan.values import NissanSafetyFlagsSP
 from opendbc.car.structs import CarParams
 from opendbc.safety.tests.libsafety import libsafety_py
 import opendbc.safety.tests.common as common
@@ -13,12 +12,11 @@ class TestNissanSafety(common.PandaCarSafetyTest, common.AngleSteeringSafetyTest
 
   TX_MSGS = [[0x169, 0], [0x2b1, 0], [0x4cc, 0], [0x20b, 2], [0x280, 2]]
   GAS_PRESSED_THRESHOLD = 3
-  RELAY_MALFUNCTION_ADDRS = {0: (0x169, 0x2b1, 0x4cc), 2: (0x280,)}
+  RELAY_MALFUNCTION_ADDRS = {0: (0x169,)}
   FWD_BLACKLISTED_ADDRS = {0: [0x280], 2: [0x169, 0x2b1, 0x4cc]}
 
   EPS_BUS = 0
   CRUISE_BUS = 2
-  ACC_MAIN_BUS = 1
 
   # Angle control limits
   STEER_ANGLE_MAX = 600  # deg, reasonable limit
@@ -58,10 +56,6 @@ class TestNissanSafety(common.PandaCarSafetyTest, common.AngleSteeringSafetyTest
     values = {"GAS_PEDAL": gas}
     return self.packer.make_can_msg_panda("GAS_PEDAL", self.EPS_BUS, values)
 
-  def _acc_state_msg(self, main_on):
-    values = {"CRUISE_ON": main_on}
-    return self.packer.make_can_msg_panda("PRO_PILOT", self.ACC_MAIN_BUS, values)
-
   def _acc_button_cmd(self, cancel=0, propilot=0, flw_dist=0, _set=0, res=0):
     no_button = not any([cancel, propilot, flw_dist, _set, res])
     values = {"CANCEL_BUTTON": cancel, "PROPILOT_BUTTON": propilot,
@@ -91,7 +85,6 @@ class TestNissanSafetyAltEpsBus(TestNissanSafety):
 
   EPS_BUS = 1
   CRUISE_BUS = 1
-  ACC_MAIN_BUS = 2
 
   def setUp(self):
     self.packer = CANPackerPanda("nissan_x_trail_2017_generated")
@@ -105,7 +98,6 @@ class TestNissanLeafSafety(TestNissanSafety):
   def setUp(self):
     self.packer = CANPackerPanda("nissan_leaf_2018_generated")
     self.safety = libsafety_py.libsafety
-    self.safety.set_current_safety_param_sp(NissanSafetyFlagsSP.LEAF)
     self.safety.set_safety_hooks(CarParams.SafetyModel.nissan, 0)
     self.safety.init_tests()
 
@@ -115,10 +107,6 @@ class TestNissanLeafSafety(TestNissanSafety):
 
   def _user_gas_msg(self, gas):
     values = {"GAS_PEDAL": gas}
-    return self.packer.make_can_msg_panda("CRUISE_THROTTLE", 0, values)
-
-  def _acc_state_msg(self, main_on):
-    values = {"CRUISE_AVAILABLE": main_on}
     return self.packer.make_can_msg_panda("CRUISE_THROTTLE", 0, values)
 
   # TODO: leaf should use its own safety param

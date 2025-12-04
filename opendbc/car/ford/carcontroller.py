@@ -1,35 +1,21 @@
 import math
 import numpy as np
-from opendbc.can import CANPacker
-from opendbc.car import ACCELERATION_DUE_TO_GRAVITY, Bus, DT_CTRL, apply_hysteresis, structs
-from opendbc.car.lateral import ISO_LATERAL_ACCEL, apply_std_steer_angle_limits
+from opendbc.can.packer import CANPacker
+from opendbc.car import ACCELERATION_DUE_TO_GRAVITY, Bus, DT_CTRL, apply_std_steer_angle_limits, structs
 from opendbc.car.ford import fordcan
-from opendbc.car.ford.values import CarControllerParams, FordFlags, CAR
+from opendbc.car.ford.values import CarControllerParams, FordFlags
 from opendbc.car.interfaces import CarControllerBase, V_CRUISE_MAX
 
 LongCtrlState = structs.CarControl.Actuators.LongControlState
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 
-# CAN FD limits:
+# ISO 11270
+ISO_LATERAL_ACCEL = 3.0  # m/s^2  # TODO: import from test lateral limits file?
+
 # Limit to average banked road since safety doesn't have the roll
-AVERAGE_ROAD_ROLL = 0.06  # ~3.4 degrees, 6% superelevation. higher actual roll raises lateral acceleration
-MAX_LATERAL_ACCEL = ISO_LATERAL_ACCEL - (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL)  # ~2.4 m/s^2
-
-
-def anti_overshoot(apply_curvature, apply_curvature_last, v_ego):
-  diff = 0.1
-  tau = 5  # 5s smooths over the overshoot
-  dt = DT_CTRL * CarControllerParams.STEER_STEP
-  alpha = 1 - np.exp(-dt / tau)
-
-  lataccel = apply_curvature * (v_ego ** 2)
-  last_lataccel = apply_curvature_last * (v_ego ** 2)
-  last_lataccel = apply_hysteresis(lataccel, last_lataccel, diff)
-  last_lataccel = alpha * lataccel + (1 - alpha) * last_lataccel
-
-  output_curvature = last_lataccel / (max(v_ego, 1) ** 2)
-
-  return float(np.interp(v_ego, [5, 10], [apply_curvature, output_curvature]))
+EARTH_G = 9.81
+AVERAGE_ROAD_ROLL = 0.06  # ~3.4 degrees, 6% superelevation
+MAX_LATERAL_ACCEL = ISO_LATERAL_ACCEL - (EARTH_G * AVERAGE_ROAD_ROLL)  # ~2.4 m/s^2
 
 
 def apply_ford_curvature_limits(apply_curvature, apply_curvature_last, current_curvature, v_ego_raw, steering_angle, lat_active, CP):
@@ -59,13 +45,12 @@ def apply_creep_compensation(accel: float, v_ego: float) -> float:
 
 
 class CarController(CarControllerBase):
-  def __init__(self, dbc_names, CP, CP_SP):
-    super().__init__(dbc_names, CP, CP_SP)
+  def __init__(self, dbc_names, CP):
+    super().__init__(dbc_names, CP)
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.CAN = fordcan.CanBus(CP)
 
     self.apply_curvature_last = 0
-    self.anti_overshoot_curvature_last = 0
     self.accel = 0.0
     self.gas = 0.0
     self.brake_request = False
@@ -75,7 +60,7 @@ class CarController(CarControllerBase):
     self.lead_distance_bars_last = None
     self.distance_bar_frame = 0
 
-  def update(self, CC, CC_SP, CS, now_nanos):
+  def update(self, CC, CS, now_nanos):
     can_sends = []
 
     actuators = CC.actuators
@@ -100,18 +85,9 @@ class CarController(CarControllerBase):
     ### lateral control ###
     # send steer msg at 20Hz
     if (self.frame % CarControllerParams.STEER_STEP) == 0:
-      # Bronco and some other cars consistently overshoot curv requests
-      # Apply some deadzone + smoothing convergence to avoid oscillations
-      if self.CP.carFingerprint in (CAR.FORD_BRONCO_SPORT_MK1, CAR.FORD_F_150_MK14):
-        self.anti_overshoot_curvature_last = anti_overshoot(actuators.curvature, self.anti_overshoot_curvature_last, CS.out.vEgoRaw)
-        apply_curvature = self.anti_overshoot_curvature_last
-      else:
-        apply_curvature = actuators.curvature
-
       # apply rate limits, curvature error limit, and clip to signal range
       current_curvature = -CS.out.yawRate / max(CS.out.vEgoRaw, 0.1)
-
-      self.apply_curvature_last = apply_ford_curvature_limits(apply_curvature, self.apply_curvature_last, current_curvature,
+      self.apply_curvature_last = apply_ford_curvature_limits(actuators.curvature, self.apply_curvature_last, current_curvature,
                                                               CS.out.vEgoRaw, 0., CC.latActive, self.CP)
 
       if self.CP.flags & FordFlags.CANFD:

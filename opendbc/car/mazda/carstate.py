@@ -2,43 +2,57 @@ from opendbc.can import CANDefine, CANParser
 from opendbc.car import Bus, create_button_events, structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarStateBase
-from opendbc.car.mazda.values import DBC, LKAS_LIMITS
-
-from opendbc.sunnypilot.car.mazda.carstate_ext import CarStateExt
+from opendbc.car.mazda.values import DBC, LKAS_LIMITS, MazdaFlags, Buttons
 
 ButtonType = structs.CarState.ButtonEvent.Type
+BUTTONS_DICT = {Buttons.SET_PLUS: ButtonType.accelCruise, Buttons.SET_MINUS: ButtonType.decelCruise,
+                Buttons.RESUME: ButtonType.resumeCruise, Buttons.CANCEL: ButtonType.cancel}
 
-
-class CarState(CarStateBase, CarStateExt):
-  def __init__(self, CP, CP_SP):
-    CarStateBase.__init__(self, CP, CP_SP)
-    CarStateExt.__init__(self, CP, CP_SP)
+class CarState(CarStateBase):
+  def __init__(self, CP):
+    super().__init__(CP)
 
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
     self.shifter_values = can_define.dv["GEAR"]["GEAR"]
 
     self.crz_btns_counter = 0
     self.acc_active_last = False
+    self.low_speed_alert = False
     self.lkas_allowed_speed = False
+    self.lkas_disabled = False
 
+    self.prev_distance_button = 0
     self.distance_button = 0
+    self.pcmCruiseGap = 0 # copy from Hyundai
 
-  def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
+  def update(self, can_parsers) -> structs.CarState:
     cp = can_parsers[Bus.pt]
     cp_cam = can_parsers[Bus.cam]
 
     ret = structs.CarState()
-    ret_sp = structs.CarStateSP()
 
-    prev_distance_button = self.distance_button
+    self.prev_distance_button = self.distance_button
     self.distance_button = cp.vl["CRZ_BTNS"]["DISTANCE_LESS"]
 
-    self.parse_wheel_speeds(ret,
+    self.prev_cruise_buttons = self.cruise_buttons
+
+    if bool(cp.vl["CRZ_BTNS"]["SET_P"]):
+      self.cruise_buttons = Buttons.SET_PLUS
+    elif bool(cp.vl["CRZ_BTNS"]["SET_M"]):
+      self.cruise_buttons = Buttons.SET_MINUS
+    elif bool(cp.vl["CRZ_BTNS"]["RES"]):
+      self.cruise_buttons = Buttons.RESUME
+    else:
+      self.cruise_buttons = Buttons.NONE
+
+    ret.wheelSpeeds = self.get_wheel_speeds(
       cp.vl["WHEEL_SPEEDS"]["FL"],
       cp.vl["WHEEL_SPEEDS"]["FR"],
       cp.vl["WHEEL_SPEEDS"]["RL"],
       cp.vl["WHEEL_SPEEDS"]["RR"],
     )
+    ret.vEgoRaw = (ret.wheelSpeeds.fl + ret.wheelSpeeds.fr + ret.wheelSpeeds.rl + ret.wheelSpeeds.rr) / 4.
+    ret.vEgo, ret.aEgo = self.update_speed_kf(ret.vEgoRaw)
 
     # Match panda speed reading
     speed_kph = cp.vl["ENGINE_DATA"]["SPEED"]
@@ -46,6 +60,20 @@ class CarState(CarStateBase, CarStateExt):
 
     can_gear = int(cp.vl["GEAR"]["GEAR"])
     ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(can_gear, None))
+    ret.gearStep = cp.vl["GEAR"]["GEAR_BOX"]
+    ret.engineRpm = cp.vl["ENGINE_DATA"]["RPM"] # for mazda RPM
+
+    # 将CAN总线上的DISTANCE_SETTING值转换为与车辆显示一致的值
+    can_distance_setting = cp.vl["CRZ_CTRL"]["DISTANCE_SETTING"]
+    # 假设最大值为4，使用5减去CAN值来获取正确的显示值
+    ret.pcmCruiseGap = 5 - can_distance_setting if 1 <= can_distance_setting <= 4 else can_distance_setting
+
+    ret.engineRpm = cp.vl["ENGINE_DATA"]["RPM"]  # for mazda RPM
+
+    # 将CAN总线上的DISTANCE_SETTING值转换为与车辆显示一致的值
+    can_distance_setting = cp.vl["CRZ_CTRL"]["DISTANCE_SETTING"]
+    # 假设最大值为4，使用5减去CAN值来获取正确的显示值
+    ret.pcmCruiseGap = 5 - can_distance_setting if 1 <= can_distance_setting <= 4 else can_distance_setting
 
     ret.genericToggle = bool(cp.vl["BLINK_INFO"]["HIGH_BEAMS"])
     ret.leftBlindspot = cp.vl["BSM"]["LEFT_BS_STATUS"] != 0
@@ -69,7 +97,8 @@ class CarState(CarStateBase, CarStateExt):
                         cp.vl["DOORS"]["BL"], cp.vl["DOORS"]["BR"]])
 
     # TODO: this should be from 0 - 1.
-    ret.gasPressed = cp.vl["ENGINE_DATA"]["PEDAL_GAS"] > 0
+    ret.gas = cp.vl["ENGINE_DATA"]["PEDAL_GAS"]
+    ret.gasPressed = ret.gas > 0
 
     # Either due to low speed or hands off
     lkas_blocked = cp.vl["STEER_RATE"]["LKAS_BLOCK"] == 1
@@ -112,22 +141,25 @@ class CarState(CarStateBase, CarStateExt):
     self.crz_btns_counter = cp.vl["CRZ_BTNS"]["CTR"]
 
     # camera signals
+    self.lkas_disabled = cp_cam.vl["CAM_LANEINFO"]["LANE_LINES"] == 0
     self.cam_lkas = cp_cam.vl["CAM_LKAS"]
     self.cam_laneinfo = cp_cam.vl["CAM_LANEINFO"]
     ret.steerFaultPermanent = cp_cam.vl["CAM_LKAS"]["ERR_BIT_1"] == 1
 
-    CarStateExt.update(self, ret, ret_sp, can_parsers)
+    self.lkas_previously_enabled = self.lkas_enabled
+    self.lkas_enabled = not self.lkas_disabled
 
     # TODO: add button types for inc and dec
+    #ret.buttonEvents = create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise})
     ret.buttonEvents = [
-      *create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise}),
-      *self.button_events,
+      *create_button_events(self.cruise_buttons, self.prev_cruise_buttons, BUTTONS_DICT),
+      *create_button_events(self.distance_button, self.prev_distance_button, {1: ButtonType.gapAdjustCruise}),
+      #*create_button_events(self.lkas_enabled, self.lkas_previously_enabled, {1: ButtonType.lfaButton}),
     ]
-
-    return ret, ret_sp
+    return ret
 
   @staticmethod
-  def get_can_parsers(CP, CP_SP):
+  def get_can_parsers(CP):
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0),
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 2),

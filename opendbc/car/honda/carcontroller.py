@@ -1,15 +1,14 @@
 import numpy as np
+from collections import namedtuple
 
 from opendbc.can import CANPacker
 from opendbc.car import Bus, DT_CTRL, rate_limit, make_tester_present_msg, structs
 from opendbc.car.honda import hondacan
-from opendbc.car.honda.values import CAR, CruiseButtons, HONDA_BOSCH, HONDA_BOSCH_CANFD, HONDA_BOSCH_RADARLESS, \
-                                     HONDA_NIDEC_ALT_PCM_ACCEL, CarControllerParams
+from opendbc.car.honda.values import CruiseButtons, VISUAL_HUD, HONDA_BOSCH, HONDA_BOSCH_RADARLESS, HONDA_NIDEC_ALT_PCM_ACCEL, CarControllerParams
 from opendbc.car.interfaces import CarControllerBase
 
-from opendbc.sunnypilot.car.honda.mads import MadsCarController
-from opendbc.sunnypilot.car.honda.gas_interceptor import GasInterceptorCarController
-from opendbc.sunnypilot.car.honda.icbm import IntelligentCruiseButtonManagementInterface
+from openpilot.common.params import Params
+
 
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 LongCtrlState = structs.CarControl.Actuators.LongControlState
@@ -79,25 +78,30 @@ def brake_pump_hysteresis(apply_brake, apply_brake_last, last_pump_ts, ts):
 
 
 def process_hud_alert(hud_alert):
-  alert_fcw = False
-  alert_steer_required = False
+  # initialize to no alert
+  fcw_display = 0
+  steer_required = 0
+  acc_alert = 0
 
-  # Make sure FCW is prioritized over steering required
-  # TODO: implement separate available LDW alert
+  # priority is: FCW, steer required, all others
   if hud_alert == VisualAlert.fcw:
-    alert_fcw = True
+    fcw_display = VISUAL_HUD[hud_alert.raw]
   elif hud_alert in (VisualAlert.steerRequired, VisualAlert.ldw):
-    alert_steer_required = True
+    steer_required = VISUAL_HUD[hud_alert.raw]
+  else:
+    acc_alert = VISUAL_HUD[hud_alert.raw]
 
-  return alert_fcw, alert_steer_required
+  return fcw_display, steer_required, acc_alert
 
 
-class CarController(CarControllerBase, MadsCarController, GasInterceptorCarController, IntelligentCruiseButtonManagementInterface):
-  def __init__(self, dbc_names, CP, CP_SP):
-    CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
-    MadsCarController.__init__(self)
-    GasInterceptorCarController.__init__(self, CP, CP_SP)
-    IntelligentCruiseButtonManagementInterface.__init__(self, CP, CP_SP)
+HUDData = namedtuple("HUDData",
+                     ["pcm_accel", "v_cruise", "lead_visible",
+                      "lanes_visible", "fcw", "acc_alert", "steer_required", "lead_distance_bars"])
+
+
+class CarController(CarControllerBase):
+  def __init__(self, dbc_names, CP):
+    super().__init__(dbc_names, CP)
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.params = CarControllerParams(CP)
     self.CAN = hondacan.CanBus(CP)
@@ -115,11 +119,26 @@ class CarController(CarControllerBase, MadsCarController, GasInterceptorCarContr
     self.brake = 0.0
     self.last_torque = 0.0
 
-  def update(self, CC, CC_SP, CS, now_nanos):
-    MadsCarController.update(self, self.CP, CC, CC_SP)
+  def update(self, CC, CS, now_nanos):
+
+    if self.frame % 50 == 0:
+      params = Params()
+      steerMax = params.get_int("CustomSteerMax")
+      steerDeltaUp = params.get_int("CustomSteerDeltaUp")
+      steerDeltaDown = params.get_int("CustomSteerDeltaDown")
+      if steerMax > 0:
+        self.params.STEER_MAX = steerMax
+        self.params.STEER_LOOKUP_BP = [0, steerMax]
+        self.params.STEER_LOOKUP_V = [0, steerMax]
+      if steerDeltaUp > 0:
+        self.params.STEER_DELTA_UP = steerDeltaUp
+      if steerDeltaDown > 0:
+        self.params.STEER_DELTA_DOWN = steerDeltaDown
+
     actuators = CC.actuators
     hud_control = CC.hudControl
-    hud_v_cruise = hud_control.setSpeed / CS.v_cruise_factor if hud_control.speedVisible else 255
+    conversion = hondacan.get_cruise_speed_conversion(self.CP.carFingerprint, CS.is_metric)
+    hud_v_cruise = hud_control.setSpeed / conversion if hud_control.speedVisible else 255
     pcm_cancel_cmd = CC.cruiseControl.cancel
 
     if CC.longActive:
@@ -142,7 +161,7 @@ class CarController(CarControllerBase, MadsCarController, GasInterceptorCarContr
     self.brake_last = rate_limit(pre_limit_brake, self.brake_last, -2., DT_CTRL)
 
     # vehicle hud display, wait for one update from 10Hz 0x304 msg
-    alert_fcw, alert_steer_required = process_hud_alert(hud_control.visualAlert)
+    fcw_display, steer_required, acc_alert = process_hud_alert(hud_control.visualAlert)
 
     # **** process the car messages ****
 
@@ -172,7 +191,7 @@ class CarController(CarControllerBase, MadsCarController, GasInterceptorCarContr
                     0.5]
     # The Honda ODYSSEY seems to have different PCM_ACCEL
     # msgs, is it other cars too?
-    if self.CP_SP.enableGasInterceptor or not CC.longActive:
+    if not CC.longActive:
       pcm_speed = 0.0
       pcm_accel = int(0.0)
     elif self.CP.carFingerprint in HONDA_NIDEC_ALT_PCM_ACCEL:
@@ -191,7 +210,7 @@ class CarController(CarControllerBase, MadsCarController, GasInterceptorCarContr
       pcm_accel = int(np.clip((accel / 1.44) / max_accel, 0.0, 1.0) * self.params.NIDEC_GAS_MAX)
 
     if not self.CP.openpilotLongitudinalControl:
-      if self.frame % 2 == 0 and self.CP.carFingerprint not in HONDA_BOSCH_RADARLESS | HONDA_BOSCH_CANFD:
+      if self.frame % 2 == 0 and self.CP.carFingerprint not in HONDA_BOSCH_RADARLESS:  # radarless cars don't have supplemental message
         can_sends.append(hondacan.create_bosch_supplemental_1(self.packer, self.CAN))
       # If using stock ACC, spam cancel command to kill gas when OP disengages.
       if pcm_cancel_cmd:
@@ -219,39 +238,21 @@ class CarController(CarControllerBase, MadsCarController, GasInterceptorCarContr
 
           pcm_override = True
           can_sends.append(hondacan.create_brake_command(self.packer, self.CAN, apply_brake, pump_on,
-                                                         pcm_override, pcm_cancel_cmd, alert_fcw,
+                                                         pcm_override, pcm_cancel_cmd, fcw_display,
                                                          self.CP.carFingerprint, CS.stock_brake))
           self.apply_brake_last = apply_brake
           self.brake = apply_brake / self.params.NIDEC_BRAKE_MAX
 
-          can_sends.extend(GasInterceptorCarController.update(self, CC, CS, gas, brake, wind_brake, self.packer, self.frame))
-
     # Send dashboard UI commands.
+    # On Nidec, this controls longitudinal positive acceleration
     if self.frame % 10 == 0:
-      if self.CP.openpilotLongitudinalControl:
-        # On Nidec, this also controls longitudinal positive acceleration
-        can_sends.append(hondacan.create_acc_hud(self.packer, self.CAN.pt, self.CP, CC.enabled, pcm_speed, pcm_accel,
-                                                 hud_control, hud_v_cruise, CS.is_metric, CS.acc_hud))
+      hud = HUDData(int(pcm_accel), int(round(hud_v_cruise)), hud_control.leadVisible,
+                    hud_control.lanesVisible, fcw_display, acc_alert, steer_required, hud_control.leadDistanceBars)
+      can_sends.extend(hondacan.create_ui_commands(self.packer, self.CAN, self.CP, CC.enabled, pcm_speed, hud, CS.is_metric, CS.acc_hud, CS.lkas_hud))
 
-      steering_available = CS.out.cruiseState.available and CS.out.vEgo > self.CP.minSteerSpeed
-      reduced_steering = CS.out.steeringPressed
-      can_sends.extend(hondacan.create_lkas_hud(self.packer, self.CAN.lkas, self.CP, hud_control, CC.latActive,
-                                                steering_available, reduced_steering, alert_steer_required, CS.lkas_hud, self.dashed_lanes))
-
-      if self.CP.openpilotLongitudinalControl:
-        # TODO: combining with create_acc_hud block above will change message order and will need replay logs regenerated
-        if self.CP.carFingerprint in (HONDA_BOSCH - HONDA_BOSCH_RADARLESS):
-          can_sends.append(hondacan.create_radar_hud(self.packer, self.CAN.pt))
-        if self.CP.carFingerprint == CAR.HONDA_CIVIC_BOSCH:
-          can_sends.append(hondacan.create_legacy_brake_command(self.packer, self.CAN.pt))
-        if self.CP.carFingerprint not in HONDA_BOSCH:
-          self.speed = pcm_speed
-          if not self.CP_SP.enableGasInterceptor:
-            self.gas = pcm_accel / self.params.NIDEC_GAS_MAX
-
-    # Intelligent Cruise Button Management
-    can_sends.extend(IntelligentCruiseButtonManagementInterface.update(self, CC_SP, self.packer, self.frame,
-                                                                       self.last_button_frame, self.CAN))
+      if self.CP.openpilotLongitudinalControl and self.CP.carFingerprint not in HONDA_BOSCH:
+        self.speed = pcm_speed
+        self.gas = pcm_accel / self.params.NIDEC_GAS_MAX
 
     new_actuators = actuators.as_builder()
     new_actuators.speed = self.speed

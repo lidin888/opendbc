@@ -20,10 +20,9 @@ def _create_radar_can_parser(car_fingerprint):
 
   return CANParser(DBC[car_fingerprint][Bus.radar], messages, 1)
 
-
 class RadarInterface(RadarInterfaceBase):
-  def __init__(self, CP, CP_SP):
-    super().__init__(CP, CP_SP)
+  def __init__(self, CP):
+    super().__init__(CP)
     self.track_id = 0
 
     if CP.carFingerprint in TSS2_CAR:
@@ -82,8 +81,9 @@ class RadarInterface(RadarInterfaceBase):
           self.pts[ii].dRel = cpt['LONG_DIST']  # from front of car
           self.pts[ii].yRel = -cpt['LAT_DIST']  # in car frame's y axis, left is positive
           self.pts[ii].vRel = cpt['REL_SPEED']
+          self.pts[ii].vLead = self.pts[ii].vRel + self.v_ego
           self.pts[ii].aRel = float('nan')
-          self.pts[ii].yvRel = float('nan')
+          self.pts[ii].yvRel = 0 #float('nan')
           self.pts[ii].measured = bool(cpt['VALID'])
         else:
           if ii in self.pts:
