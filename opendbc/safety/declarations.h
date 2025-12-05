@@ -56,6 +56,19 @@
 
 #define UPDATE_VEHICLE_SPEED(val_ms) (update_sample(&vehicle_speed, ROUND((val_ms) * VEHICLE_SPEED_FACTOR)))
 
+// Forward declaration for CANPacket_t
+typedef struct {
+  unsigned char fd : 1;
+  unsigned char bus : 3;
+  unsigned char data_len_code : 4;
+  unsigned char rejected : 1;
+  unsigned char returned : 1;
+  unsigned char extended : 1;
+  unsigned int addr : 29;
+  unsigned char checksum;
+  unsigned char data[64];
+} CANPacket_t;
+
 uint32_t GET_BYTES(const CANPacket_t *msg, int start, int len);
 
 extern const int MAX_WRONG_COUNTERS;
