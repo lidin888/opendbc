@@ -6,6 +6,9 @@
 #include "opendbc/safety/declarations.h"
 #include "opendbc/safety/can.h"
 
+// Forward declaration from panda/board/can.h
+extern const unsigned char dlc_to_len[16];
+
 // all the safety modes
 #include "opendbc/safety/modes/defaults.h"
 #include "opendbc/safety/modes/honda.h"
