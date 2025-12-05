@@ -1,5 +1,21 @@
 #pragma once
 
-#include "panda/board/can_declarations.h"
+// Forward declarations - will be defined by panda
+#define CANPACKET_HEAD_SIZE 6U
+#define CANPACKET_DATA_SIZE_MAX 64U
+#define CAN_PACKET_VERSION 4
 
-// Use CANPacket_t from panda/board/can_declarations.h
+// Forward declare CANPacket_t - actual definition in panda/board/can_declarations.h
+typedef struct {
+  unsigned char fd : 1;
+  unsigned char bus : 3;
+  unsigned char data_len_code : 4;
+  unsigned char rejected : 1;
+  unsigned char returned : 1;
+  unsigned char extended : 1;
+  unsigned int addr : 29;
+  unsigned char checksum;
+  unsigned char data[CANPACKET_DATA_SIZE_MAX];
+} CANPacket_t;
+
+#define GET_LEN(msg) (dlc_to_len[(msg)->data_len_code])
