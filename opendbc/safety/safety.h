@@ -9,6 +9,19 @@
 // Forward declaration from panda/board/can.h
 extern const unsigned char dlc_to_len[16];
 
+// Forward declaration for CANPacket_t - actual definition in panda
+typedef struct {
+  unsigned char fd : 1;
+  unsigned char bus : 3;
+  unsigned char data_len_code : 4;
+  unsigned char rejected : 1;
+  unsigned char returned : 1;
+  unsigned char extended : 1;
+  unsigned int addr : 29;
+  unsigned char checksum;
+  unsigned char data[64];
+} CANPacket_t;
+
 // all the safety modes
 #include "opendbc/safety/modes/defaults.h"
 #include "opendbc/safety/modes/honda.h"

@@ -6,6 +6,6 @@
 #define CAN_PACKET_VERSION 4
 
 // Use forward declaration to avoid conflicts with panda/board/can_declarations.h
-typedef struct CANPacket_s CANPacket_t;
+// The actual definition will be provided by panda when included
 
 #define GET_LEN(msg) (dlc_to_len[(msg)->data_len_code])
