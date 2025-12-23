@@ -88,8 +88,9 @@ class CarState(CarStateBase, CarStateExt):
     ret_sp = structs.CarStateSP()
     cp_acc = cp_cam if self.CP.carFingerprint in (TSS2_CAR - RADAR_ACC_CAR) else cp
 
-    if not self.CP.flags & ToyotaFlags.SECOC.value:
-      self.gvc = cp.vl["VSC1S07"]["GVC"]
+    # IMU related code commented out
+    # if not self.CP.flags & ToyotaFlags.SECOC.value:
+    #   self.gvc = cp.vl["VSC1S07"]["GVC"]
 
     ret.doorOpen = any([cp.vl["BODY_CONTROL_STATE"]["DOOR_OPEN_FL"], cp.vl["BODY_CONTROL_STATE"]["DOOR_OPEN_FR"],
                         cp.vl["BODY_CONTROL_STATE"]["DOOR_OPEN_RL"], cp.vl["BODY_CONTROL_STATE"]["DOOR_OPEN_RR"]])
@@ -162,8 +163,10 @@ class CarState(CarStateBase, CarStateExt):
       cp.vl["WHEEL_SPEEDS"]["WHEEL_SPEED_RR"],
     )
     ret.vEgoCluster = ret.vEgo * 1.015  # minimum of all the cars
+    # IMU related code commented out
     if not self.CP.flags & ToyotaFlags.SECOC.value:
       #ret.yawRate = float(cp.vl["KINEMATICS"]["YAW_RATE"] * CV.DEG_TO_RAD)
+      pass
 
     ret.standstill = abs(ret.vEgoRaw) < 1e-3
 

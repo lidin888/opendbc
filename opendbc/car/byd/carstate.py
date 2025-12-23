@@ -116,7 +116,8 @@ class CarState(CarStateBase):
         ret.vEgoRaw = float(self.speed_kph * CV.KPH_TO_MS) # KPH to m/s
         ret.vEgo, ret.aEgo = self.update_speed_kf(ret.vEgoRaw)
 
-        ret.yawRate = cp.vl["YAW_RATE"]["YawRate"] - cp.vl["YAW_RATE"]["YawRateOffset"]
+        # IMU related code commented out
+        # ret.yawRate = cp.vl["YAW_RATE"]["YawRate"] - cp.vl["YAW_RATE"]["YawRateOffset"]
 
         ret.standstill = (speed_raw == 0)
 
@@ -241,7 +242,8 @@ class CarState(CarStateBase):
             ("BCM", 1),
             ("PCM_BUTTONS", 20),
             ("DATETIME", 2),
-            ("YAW_RATE", 50),
+            # IMU related code commented out
+            # ("YAW_RATE", 50),
             ("BELT", 20),
         ]
 
