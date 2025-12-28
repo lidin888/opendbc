@@ -35,7 +35,7 @@ class CarStateExt:
     self.zss_angle_offset = 0.
     self.zss_threshold_count = 0
 
-    """Initialize traffic signal variables"""
+    # Initialize traffic signal variables
     self._tsgn1 = None
     self._spdval1 = None
     self._splsgn1 = None
@@ -45,6 +45,10 @@ class CarStateExt:
     self._splsgn3 = None
     self._tsgn4 = None
     self._splsgn4 = None
+
+  def _init_traffic_signals(self):
+    """Initialize traffic signal variables"""
+    pass
 
   @staticmethod
   def traffic_signal_description(tsgn):
