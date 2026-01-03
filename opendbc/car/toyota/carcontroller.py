@@ -111,6 +111,11 @@ class CarController(CarControllerBase, SecOCLongCarController, GasInterceptorCar
 
     self._auto_lock_speed = 0.0
 
+    # 油门覆盖控制 (2021雷凌1.2T TSS2 巡航踩油门修复)
+    self.gas_override_counter = 0
+    self.gas_threshold_high = 8.0  # 踩油门触发阈值(%)
+    self.gas_threshold_low = 3.0   # 松油门恢复阈值(%)
+
     if CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD:
       self.brake_hold_active: bool = False
       self._brake_hold_counter: int = 0
@@ -298,8 +303,23 @@ class CarController(CarControllerBase, SecOCLongCarController, GasInterceptorCar
         pcm_accel_cmd = pcm_accel_cmd if self.CP.carFingerprint in TSS2_CAR else actuators.accel
         pcm_accel_cmd = float(np.clip(pcm_accel_cmd, self.params.ACCEL_MIN, self.params.ACCEL_MAX))
 
-        can_sends.append(toyotacan.create_accel_command(self.packer, pcm_accel_cmd, pcm_cancel_cmd, self.permit_braking, self.standstill_req, lead,
-                                                        CS.acc_type, fcw_alert, self.distance_button, self.SECOC_LONG))
+        # *** 油门踏板覆盖逻辑 (2021雷凌1.2T TSS2) ***
+        gas_pedal_pct = CS.gas_pedal_pct  # 从 CarState 实例变量获取，0-100%
+        if gas_pedal_pct > self.gas_threshold_high:
+          self.gas_override_counter = 17  # 约0.5秒 @ 33Hz
+        elif gas_pedal_pct < self.gas_threshold_low:
+          self.gas_override_counter = 0
+
+        # 踩油门时发送ACCEL_CMD=0，保持ACC连接但不干预
+        if self.gas_override_counter > 0:
+          self.gas_override_counter -= 1
+          can_sends.append(toyotacan.create_accel_command(
+            self.packer, 0.0, False, self.permit_braking, self.standstill_req, lead,
+            CS.acc_type, fcw_alert, self.distance_button, self.SECOC_LONG))
+        else:
+          can_sends.append(toyotacan.create_accel_command(
+            self.packer, pcm_accel_cmd, pcm_cancel_cmd, self.permit_braking, self.standstill_req, lead,
+            CS.acc_type, fcw_alert, self.distance_button, self.SECOC_LONG))
         self.accel = pcm_accel_cmd
 
     else:

@@ -1,4 +1,5 @@
 import copy
+import numpy as np
 from cereal import custom
 from openpilot.common.params import Params
 from opendbc.can import CANDefine, CANParser
@@ -80,6 +81,9 @@ class CarState(CarStateBase, CarStateExt):
 
     self.frame = 0
 
+    # 油门踏板百分比 (用于巡航踩油门修复 - 2021雷凌1.2T TSS2)
+    self.gas_pedal_pct = 0.0  # 0-100%
+
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     cp = can_parsers[Bus.pt]
     cp_cam = can_parsers[Bus.cam]
@@ -106,6 +110,12 @@ class CarState(CarStateBase, CarStateExt):
     else:
       ret.gasPressed = cp.vl["PCM_CRUISE"]["GAS_RELEASED"] == 0  # TODO: these also have GAS_PEDAL, come back and unify
       can_gear = int(cp.vl["GEAR_PACKET"]["GEAR"])
+      # *** 读取油门踏板百分比 (0x705 GAS_PEDAL) ***
+      try:
+        gas_pedal_raw = cp.vl["GAS_PEDAL"]["GAS_PEDAL"]  # 原始值，缩放因子0.5，单位%
+        self.gas_pedal_pct = float(np.clip(gas_pedal_raw, 0, 100))
+      except (KeyError, AttributeError, TypeError):
+        self.gas_pedal_pct = 100.0 if ret.gasPressed else 0.0
       if not self.CP.enableDsu and not self.CP.flags & ToyotaFlags.DISABLE_RADAR.value:
         ret.stockAeb = bool(cp_acc.vl["PRE_COLLISION"]["PRECOLLISION_ACTIVE"] and cp_acc.vl["PRE_COLLISION"]["FORCE"] < -1e-5)
 
