@@ -130,10 +130,6 @@ class CarInterface(CarInterfaceBase):
       candidate in (TSS2_CAR - RADAR_ACC_CAR) or \
       bool(ret.flags & ToyotaFlags.DISABLE_RADAR.value)
 
-    if Params().get_bool("ToyotaStockLongitudinal") or Params().get_bool("ToyotaEnforceStockLongitudinal"):
-      ret.openpilotLongitudinalControl = False
-      ret.alphaLongitudinalAvailable = False
-
     ret.autoResumeSng = ret.openpilotLongitudinalControl and candidate in NO_STOP_TIMER_CAR
 
     if not ret.openpilotLongitudinalControl:
@@ -246,6 +242,10 @@ class CarInterface(CarInterfaceBase):
     if ret.enableGasInterceptor:
       ret.safetyParam |= ToyotaSafetyFlagsSP.GAS_INTERCEPTOR
       stock_cp.minEnableSpeed = -1.
+
+    if ret.flags & ToyotaFlagsSP.STOCK_LONGITUDINAL:
+      stock_cp.alphaLongitudinalAvailable = False
+      stock_cp.openpilotLongitudinalControl = False
 
     if not stock_cp.openpilotLongitudinalControl:
       stock_cp.safetyConfigs[0].safetyParam |= ToyotaSafetyFlags.STOCK_LONGITUDINAL.value

@@ -13,6 +13,7 @@ class ToyotaFlagsSP(IntFlag):
   SP_ENHANCED_BSM = 4
   SP_NEED_DEBUG_BSM = 8
   SP_AUTO_BRAKE_HOLD = 16
+  STOCK_LONGITUDINAL = 32
 
 
 class ToyotaSafetyFlagsSP:
