@@ -130,7 +130,7 @@ class CarInterface(CarInterfaceBase):
       candidate in (TSS2_CAR - RADAR_ACC_CAR) or \
       bool(ret.flags & ToyotaFlags.DISABLE_RADAR.value)
 
-    if Params().get_bool("ToyotaStockLongitudinal"):
+    if Params().get_bool("ToyotaStockLongitudinal") or Params().get_bool("ToyotaEnforceStockLongitudinal"):
       ret.openpilotLongitudinalControl = False
       ret.alphaLongitudinalAvailable = False
 
