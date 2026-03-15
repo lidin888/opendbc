@@ -115,6 +115,11 @@ struct OnroadEventDEPRECATED @0x9b1657f34caf3ad3 {
     personalityChanged @122;
     aeb @123;
 
+    # CarrotPilot traffic events
+    trafficSignChanged @126;
+    trafficSignGreen @127;
+    trafficStopping @128;
+
     radarCanErrorDEPRECATED @15;
     communityFeatureDisallowedDEPRECATED @62;
     radarCommIssueDEPRECATED @67;
@@ -230,6 +235,16 @@ struct CarState {
   fuelGauge @41 :Float32; # battery or fuel tank level from [0.0, 1.0]
   charging @43 :Bool;
 
+  # CarrotPilot fields
+  vCluRatio @61 :Float32;
+  logCarrot @62 :Text;
+  softHoldActive @63 :Int16;    # 0: not active, 1: active ready, 2: activated
+  activateCruise @64 :Int16;
+  latEnabled @65 :Bool;
+  useLaneLineSpeed @66 :Float32;
+  carrotCruise @67 :Int16;
+  pcmCruiseGap @68 :Int16;      # 0: can't read, 1,2,3,4: gap setting
+
   struct WheelSpeeds {
     # optional wheel speeds
     fl @0 :Float32;
@@ -280,6 +295,9 @@ struct CarState {
       setCruise @9;
       resumeCruise @10;
       gapAdjustCruise @11;
+      lfaButton @12;
+      paddleLeft @13;
+      paddleRight @14;
     }
   }
 
@@ -402,6 +420,23 @@ struct CarControl {
     rightLaneDepart @8: Bool;
     leftLaneDepart @9: Bool;
     leadDistanceBars @10: Int8;  # 1-3: 1 is closest, 3 is farthest. some ports may utilize 2-4 bars instead
+
+    # CarrotPilot HUD fields
+    activeCarrot @11 :Int16;
+    leadDistance @12 :Float32;
+    leadRelSpeed @13 :Float32;
+    leadDPath @14 :Float32;
+    leadRadar @15 :Int16;
+    modelDesire @16 :Int16;
+    atcDistance @17 :Float32;
+    leadLeftDist @18 :Float32;
+    leadRightDist @19 :Float32;
+    leadLeftLat @20 :Float32;
+    leadRightLat @21 :Float32;
+    leadLeftDist2 @22 :Float32;
+    leadRightDist2 @23 :Float32;
+    leadLeftLat2 @24 :Float32;
+    leadRightLat2 @25 :Float32;
 
     # not used with the dash, TODO: separate structs for dash UI and device UI
     audibleAlert @5: AudibleAlert;

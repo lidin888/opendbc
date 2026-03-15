@@ -857,6 +857,16 @@
     ],
     "package": "All"
   },
+  "Geely Binyue": {
+    "platform": "GEELY_BINYUE",
+    "make": "Geely",
+    "brand": "geely",
+    "model": "Binyue",
+    "year": [
+      "2020"
+    ],
+    "package": "All"
+  },
   "GMC Acadia 2018": {
     "platform": "GMC_ACADIA",
     "make": "GMC",
