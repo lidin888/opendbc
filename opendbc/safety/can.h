@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef CAN_PACKET_VERSION
+#define CAN_PACKET_VERSION 4
+
 static const unsigned char dlc_to_len[] = {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 12U, 16U, 20U, 24U, 32U, 48U, 64U};
 
 #define CANPACKET_HEAD_SIZE 6U  // non-data portion of CANPacket_t
@@ -18,3 +21,5 @@ typedef struct {
 } __attribute__((packed, aligned(4))) CANPacket_t;
 
 #define GET_LEN(msg) (dlc_to_len[(msg)->data_len_code])
+
+#endif  // CAN_PACKET_VERSION
