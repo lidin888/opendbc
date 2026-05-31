@@ -291,6 +291,7 @@ struct CarState {
   logCarrot @64 :Text;
   useLaneLineSpeed @65 :Int32;
   carrotCruise @66 :Bool;
+  pcmCruiseGap @67 :Int32;
 
   # deprecated
   errorsDEPRECATED @0 :List(OnroadEventDEPRECATED.EventName);
