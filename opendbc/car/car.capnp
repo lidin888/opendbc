@@ -284,6 +284,14 @@ struct CarState {
     }
   }
 
+  # CarrotPilot fields
+  softHoldActive @61 :Bool;
+  activateCruise @62 :Bool;
+  latEnabled @63 :Bool;
+  logCarrot @64 :Text;
+  useLaneLineSpeed @65 :Int32;
+  carrotCruise @66 :Bool;
+
   # deprecated
   errorsDEPRECATED @0 :List(OnroadEventDEPRECATED.EventName);
   gasDEPRECATED @3 :Float32;        # this is user pedal only
