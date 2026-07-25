@@ -13,6 +13,7 @@ from opendbc.car.toyota.values import CAR, NO_STOP_TIMER_CAR, TSS2_CAR, \
                                         CarControllerParams, ToyotaFlags, \
                                         UNSUPPORTED_DSU_CAR
 from opendbc.can import CANPacker
+from opendbc.sunnypilot.car.toyota.auto_brake_hold import AutoBrakeHoldCarController
 from opendbc.sunnypilot.car.toyota.enhanced_bsm import EnhancedBsmCarController
 from opendbc.sunnypilot.car.toyota.gas_interceptor import GasInterceptorCarController
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
@@ -92,14 +93,9 @@ class CarController(CarControllerBase, GasInterceptorCarController):
     self.secoc_prev_reset_counter = 0
 
     self.enhanced_bsm = EnhancedBsmCarController(CP, CP_SP)
+    self.auto_brake_hold = AutoBrakeHoldCarController(CP, CP_SP)
 
     self._auto_lock_speed = 0.0
-
-    if CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD:
-      self.brake_hold_active: bool = False
-      self._brake_hold_counter: int = 0
-      self._brake_hold_reset: bool = False
-      self._prev_brake_pressed: bool = False
 
     self._auto_lock_once = False
     self._gear_prev = GearShifter.park
@@ -219,8 +215,8 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     self.last_standstill = CS.out.standstill
 
-    if self.CP_SP.flags & ToyotaFlagsSP.SP_AUTO_BRAKE_HOLD:
-      can_sends.extend(self.create_auto_brake_hold_messages(CS))
+    if self.auto_brake_hold.enabled:
+      can_sends.extend(self.auto_brake_hold.update(CS, self.frame, self.packer))
 
     # handle UI messages
     fcw_alert = hud_control.visualAlert == VisualAlert.fcw
@@ -357,25 +353,3 @@ class CarController(CarControllerBase, GasInterceptorCarController):
 
     self.frame += 1
     return new_actuators, can_sends
-
-  # auto brake hold (https://github.com/AlexandreSato/)
-  def create_auto_brake_hold_messages(self, CS: structs.CarState, brake_hold_allowed_timer: int = 100):
-    can_sends = []
-    disallowed_gears = [GearShifter.park, GearShifter.reverse]
-    brake_hold_allowed = CS.out.standstill and CS.out.cruiseState.available and not CS.out.gasPressed and \
-                         not CS.out.cruiseState.enabled and (CS.out.gearShifter not in disallowed_gears)
-
-    if brake_hold_allowed:
-      self._brake_hold_counter += 1
-      self.brake_hold_active = self._brake_hold_counter > brake_hold_allowed_timer and not self._brake_hold_reset
-      self._brake_hold_reset = not self._prev_brake_pressed and CS.out.brakePressed and not self._brake_hold_reset
-    else:
-      self._brake_hold_counter = 0
-      self.brake_hold_active = False
-      self._brake_hold_reset = False
-    self._prev_brake_pressed = CS.out.brakePressed
-
-    if self.frame % 2 == 0:
-      can_sends.append(toyotacan.create_brake_hold_command(self.packer, self.frame, CS.pre_collision_2, self.brake_hold_active))
-
-    return can_sends
