@@ -284,7 +284,7 @@ struct CarState {
     }
   }
 
-  # CarrotPilot fields
+  # CarrotPilot fields (紧接blockPcmEnable@60，capnp要求序号连续)
   softHoldActive @61 :Bool;
   activateCruise @62 :Bool;
   latEnabled @63 :Bool;
