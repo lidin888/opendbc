@@ -18,8 +18,6 @@ def _create_radar_can_parser(car_fingerprint):
   msg_b_n = len(RADAR_B_MSGS)
   messages = list(zip(RADAR_A_MSGS + RADAR_B_MSGS, [20] * (msg_a_n + msg_b_n), strict=True))
 
-  messages.append(('STATUS_MSG', 10))
-
   return CANParser(DBC[car_fingerprint][Bus.radar], messages, 1)
 
 
@@ -60,9 +58,6 @@ class RadarInterface(RadarInterfaceBase):
     if not self.rcp.can_valid:
       ret.errors.canError = True
 
-    if self.rcp.vl['STATUS_MSG']['RADAR_STATUS'] != 1 or self.rcp.vl['STATUS_MSG']['RADAR_PRE_FAULT'] != 0:
-      ret.errors.radarUnavailableTemporary = True
-
     for ii in sorted(updated_messages):
       if ii in self.RADAR_A_MSGS:
         cpt = self.rcp.vl[ii]
@@ -86,6 +81,9 @@ class RadarInterface(RadarInterfaceBase):
           self.pts[ii].dRel = cpt['LONG_DIST']  # from front of car
           self.pts[ii].yRel = -cpt['LAT_DIST']  # in car frame's y axis, left is positive
           self.pts[ii].vRel = cpt['REL_SPEED']
+          self.pts[ii].aRel = float('nan')
+          self.pts[ii].yvRel = float('nan')
+          self.pts[ii].measured = bool(cpt['VALID'])
         else:
           if ii in self.pts:
             del self.pts[ii]

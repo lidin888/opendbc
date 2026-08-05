@@ -24,7 +24,7 @@ AccelPersonality = custom.LongitudinalPlanSP.AccelerationPersonality
 #     if using the other control command, goes directly to 3 after 1.5 seconds
 # - initializing: LTA can report 0 as long as STEER_TORQUE_SENSOR->STEER_ANGLE_INITIALIZING is 1,
 #     and is a catch-all for LKA
-TEMP_STEER_FAULTS = (0, 9, 11, 21, 25)
+TEMP_STEER_FAULTS = (0, 11)
 # - lka/lta msg drop out: 3 (recoverable)
 # - prolonged high driver torque: 17 (permanent)
 PERM_STEER_FAULTS = (3, 17)
@@ -144,6 +144,13 @@ class CarState(CarStateBase, CarStateExt):
       cp.vl["WHEEL_SPEEDS"]["WHEEL_SPEED_RR"],
     )
     ret.vEgoCluster = ret.vEgo * 1.015  # minimum of all the cars
+
+    # CAN 偏航角速度：从 KINEMATICS 消息读取原车 IMU 的 yaw rate
+    # 当 CH347T+LSM6DS3 陀螺仪失效时，locationd 会用此值作为 EKF 的 fallback 输入
+    # Toyota DBC 中 YAW_RATE 单位是 deg/s，需乘 CV.DEG_TO_RAD 转为 rad/s
+    # DBC 未定义此消息时 cp.vl["KINEMATICS"]["YAW_RATE"] 返回 NaN，
+    # 下游 locationd 的 math.isnan 检查会跳过 gyro fallback
+    ret.yawRate = float(cp.vl["KINEMATICS"]["YAW_RATE"] * CV.DEG_TO_RAD)
 
     ret.standstill = abs(ret.vEgoRaw) < 1e-3
 
@@ -281,6 +288,7 @@ class CarState(CarStateBase, CarStateExt):
   def get_can_parsers(CP, CP_SP):
     pt_messages = [
       ("BLINKERS_STATE", float('nan')),
+      ("KINEMATICS", float('nan')),
     ]
 
     cam_messages = [
