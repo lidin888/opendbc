@@ -204,6 +204,15 @@ struct CarState {
   lowSpeedAlert @56 :Bool;  # lost steering control due to a dynamic min steering speed
   blockPcmEnable @60 :Bool;  # whether to allow PCM to enable this frame
 
+  # CarrotPilot fields (紧接blockPcmEnable@60，capnp要求序号连续)
+  softHoldActive @61 :Bool;
+  activateCruise @62 :Bool;
+  latEnabled @63 :Bool;
+  logCarrot @64 :Text;
+  useLaneLineSpeed @65 :Int32;
+  carrotCruise @66 :Bool;
+  pcmCruiseGap @67 :Int32;
+
   # cruise state
   cruiseState @10 :CruiseState;
 
