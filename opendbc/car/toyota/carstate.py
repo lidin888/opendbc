@@ -24,7 +24,7 @@ AccelPersonality = custom.LongitudinalPlanSP.AccelerationPersonality
 #     if using the other control command, goes directly to 3 after 1.5 seconds
 # - initializing: LTA can report 0 as long as STEER_TORQUE_SENSOR->STEER_ANGLE_INITIALIZING is 1,
 #     and is a catch-all for LKA
-TEMP_STEER_FAULTS = (0, 9, 11, 21, 25)
+TEMP_STEER_FAULTS = (0, 11)
 # - lka/lta msg drop out: 3 (recoverable)
 # - prolonged high driver torque: 17 (permanent)
 PERM_STEER_FAULTS = (3, 17)
