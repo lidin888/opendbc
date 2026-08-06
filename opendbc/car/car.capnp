@@ -205,6 +205,15 @@ struct CarState {
   blockPcmEnable @60 :Bool;  # whether to allow PCM to enable this frame
   carNotReady @61 :Bool;  # car is transiently refusing engagement, used to prevent a fault if engaged
 
+  # CarrotPilot fields (紧接blockPcmEnable@60，capnp要求序号连续)
+  softHoldActive @61 :Bool;
+  activateCruise @62 :Bool;
+  latEnabled @63 :Bool;
+  logCarrot @64 :Text;
+  useLaneLineSpeed @65 :Int32;
+  carrotCruise @66 :Bool;
+  pcmCruiseGap @67 :Int32;
+
   # cruise state
   cruiseState @10 :CruiseState;
 
