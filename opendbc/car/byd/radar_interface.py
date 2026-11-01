@@ -1120,6 +1120,9 @@ class RadarInterface(RadarInterfaceBase):
             self.vrel_filters.pop(tid, None)
 
         radar_data = structs.RadarData()
+        # 融合层契约: card 用 errors.to_dict() 判 valid, radard 用 radarErrors 上报;
+        # 此路径对现有指纹不可达(见上方审计注释), 补上以保持四路径一致。
+        radar_data.errors.canError = not self.rcp.can_valid
         radar_data.points = list(self.pts.values())
         return radar_data
 
