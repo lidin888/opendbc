@@ -15,7 +15,7 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car import Bus, create_button_events, structs
 from opendbc.car.interfaces import CarStateBase
 from opendbc.car.byd.debug_log import acc_debug_write
-from opendbc.car.byd.values import DBC, CanBus, LKASConfig, CarControllerParams, CAR, PLATFORM_SONG_PLUS_DMI, MRR_DIRECT_DECODE_CAR, RADAR_MRR_CAR
+from opendbc.car.byd.values import DBC, CanBus, LKASConfig, CarControllerParams, CAR, PLATFORM_SONG_PLUS_DMI, MRR_DIRECT_DECODE_CAR, RADAR_MRR_CAR, BydFlags
 
 import os
 
@@ -191,8 +191,13 @@ class CarState(CarStateBase):
       ret.leftBlindspot = bool(cp.vl["BSD_RADAR"]["LEFT_APPROACH"])
       ret.rightBlindspot = bool(cp.vl["BSD_RADAR"]["RIGHT_APPROACH"])
 
-    ret.leftBlinker = bool(cp.vl["STALKS"]["LeftIndicator"])
-    ret.rightBlinker = bool(cp.vl["STALKS"]["RightIndicator"])
+    if self.CP.flags & BydFlags.ALT_INDICATOR:
+      # 新平台 (汉DMi22/25/Tang新代): 转向灯在 TURN_SIGNAL_SWITCH 组合值里 (3=左 5=右)
+      ret.leftBlinker = cp.vl["STALKS"]["TURN_SIGNAL_SWITCH"] == 3
+      ret.rightBlinker = cp.vl["STALKS"]["TURN_SIGNAL_SWITCH"] == 5
+    else:
+      ret.leftBlinker = bool(cp.vl["STALKS"]["LeftIndicator"])
+      ret.rightBlinker = bool(cp.vl["STALKS"]["RightIndicator"])
 
     ret.steeringAngleOffsetDeg = 0
     ret.steeringAngleDeg = cp.vl["EPS"]["SteeringAngle"]
@@ -217,9 +222,16 @@ class CarState(CarStateBase):
     brake_val = cp.vl["PEDAL"]["BrakePedal"]
     ret.brakePressed = brake_val > 0
 
-    ret.seatbeltUnlatched = cp.vl["BELT"]["SeatBeat"] != 2  # 1:unfasten, 2:fasten
-
-    ret.doorOpen = any([cp.vl["BCM"]["FrontLeftDoor"], cp.vl["BCM"]["FrontRightDoor"], cp.vl["BCM"]["RearLeftDoor"], cp.vl["BCM"]["RearRightDoor"]])
+    if self.CP.flags & BydFlags.BCM_SEAL:
+      # 新平台门/安全带: 660 报文的 2bit 状态 (门==1 关闭 / !=1 开; 带==2 系好 / !=2 松开)
+      door_msg = cp.vl["BELT"]
+      ret.doorOpen = any([door_msg["DoorStateFL"] != 1, door_msg["DoorStateFR"] != 1,
+                          door_msg["DoorStateRL"] != 1, door_msg["DoorStateRR"] != 1])
+      ret.seatbeltUnlatched = door_msg["SeatBeltState"] != 2
+    else:
+      ret.seatbeltUnlatched = cp.vl["BELT"]["SeatBeat"] != 2  # 1:unfasten, 2:fasten
+      ret.doorOpen = any([cp.vl["BCM"]["FrontLeftDoor"], cp.vl["BCM"]["FrontRightDoor"],
+                          cp.vl["BCM"]["RearLeftDoor"], cp.vl["BCM"]["RearRightDoor"]])
 
     # 同样: AcceleratorPedal factor=0.01, int()截断成0 → gasPressed恒False。保留float。
     gas_val = cp.vl["PEDAL"]["AcceleratorPedal"]
@@ -228,7 +240,10 @@ class CarState(CarStateBase):
     ret.cruiseState.available = lkas_isMainSwOn and lkas_config_isAccOn and lkas_hud_AccOn1
     ret.cruiseState.enabled = self.acc_state in (3, 5)
     ret.cruiseState.standstill = ret.standstill
-    ret.cruiseState.speed = cp_cam.vl["ACC_HUD_ADAS"]["SetSpeed"] * CV.KPH_TO_MS
+    set_speed_kph = cp_cam.vl["ACC_HUD_ADAS"]["SetSpeed"]
+    if self.CP.flags & BydFlags.SETSPEED_X10:
+      set_speed_kph *= 10  # 新平台仪表 SetSpeed 为 x10 编码
+    ret.cruiseState.speed = set_speed_kph * CV.KPH_TO_MS
 
     ret.latEnabled = lkas_isMainSwOn and self.lkas_allowed_speed
 
@@ -315,8 +330,10 @@ class CarState(CarStateBase):
     # else:
     #     self.setTimeDelay = self.setTimeDelay - 1
 
+    # ALT_PCM_BTN: 新平台取消键语义为 setCruise (源实测映射, 不影响我们的 res/cancel 注入路径)
+    cancel_map = {1: ButtonType.setCruise} if (self.CP.flags & BydFlags.ALT_PCM_BTN) else {1: ButtonType.cancel}
     ret.buttonEvents = [
-      *create_button_events(self.btn_acc_cancel, prev_btn_acc_cancel, {1: ButtonType.cancel}),
+      *create_button_events(self.btn_acc_cancel, prev_btn_acc_cancel, cancel_map),
       *create_button_events(self.btn_acc_set_reset, prev_btn_acc_set_reset, {1: ButtonType.decelCruise, 3: ButtonType.accelCruise}),
       # 车距键方向: 上键(BTN_AccDistanceDecrease)=减车距=gapAdjustCruise(递减);
       #             下键(BTN_AccDistanceIncrease)=增车距=altButton2(cruise.py递增分支)。

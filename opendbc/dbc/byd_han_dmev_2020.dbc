@@ -92,6 +92,11 @@ BO_ 578 DRIVE_STATE: 8 XXX
 
 BO_ 660 BELT: 8 XXX
 	SG_ SeatBeat : 16|2@1+ (1,0) [0|3] "" XXX
+	SG_ DoorStateFL : 1|2@0+ (1,0) [0|3] "" XXX
+	SG_ DoorStateFR : 3|2@0+ (1,0) [0|3] "" XXX
+	SG_ DoorStateRL : 5|2@0+ (1,0) [0|3] "" XXX
+	SG_ DoorStateRR : 7|2@0+ (1,0) [0|3] "" XXX
+	SG_ SeatBeltState : 17|2@0+ (1,0) [0|3] "" XXX
 
 BO_ 694 DATETIME: 8 XXX
  SG_ YY : 7|8@0+ (1,0) [0|255] "" XXX

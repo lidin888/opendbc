@@ -114,6 +114,23 @@ class BydSafetyFlags(IntFlag):
   OP_LONG = 0x40 #OP纵向模式: panda controls_allowed 由OP的ACC_CMD驱动, 不依赖原车ACC激活
 
 
+# 车型报文变体位 (存入 CarParams.flags, carstate 按位分支)。
+# 移植自 mypilot 社区包 (高阶版 values.py BydFlags); 位定义必须与数据源一致。
+class BydFlags(IntFlag):
+  CANFD = 1                        # CAN-FD 平台标记 (解析路径无分支, 仅语义标记)
+  ANGLE_CONTROL = 2                # 角度控制车型 (P2 阶段, 当前未接入)
+  ALT_INDICATOR = 4                # 转向灯取 TURN_SIGNAL_SWITCH==3/5 (而非 Left/RightIndicator 位)
+  SETSPEED_X10 = 8                 # 仪表 SetSpeed 为 x10 编码
+  BCM_SEAL = 16                    # 门/安全带来自 660 报文 (2bit 语义: 门!=1开, 带!=2松)
+  ALT_ACC_EPS = 32                 # EPS 备用源 (源实现中未消费, 保留语义)
+  ALT_ACC_EPS_SEAL = 64            # EPS 来自 0x1FC(508) 报文 (P2 角度车型, 当前未接入)
+  ALT_ACC_CURISE_MODE = 128        # 巡航显示变体
+  ALT_ACC_ACCON1 = 256             # AccOn1 变体
+  ALT_PCM_BTN = 512                # 取消键语义改为 setCruise (而非 cancel)
+  ACC_STOP_FIX = 1024              # 跟停修复标记
+  ANGLE_DRIVER_OVERRIDE_RELEASE = 2048  # 角度模式驾驶员接管释放 (P2)
+
+
 @dataclass
 class BydCarDocs(CarDocs):
   package: str = "All"
@@ -178,6 +195,52 @@ class CAR(Platforms):
     CarSpecs(mass=1625., wheelbase=2.720, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
   )
 
+  # ===== P1 批次 (2026-11-01): mypilot 社区包移植的 7 款扭矩模式车型 =====
+  # flags 来自源 values.py 实测值; 规格 (mass/wheelbase) 来自源 CarSpecs。
+  # 注意: HAN_DMI_22R / HAN_DMI_25 / QIN_PRO 源指纹库缺 CAN 指纹 → 无法自动识别,
+  #       需 "强制车型识别" 手动选择 (见 fingerprints.py 注释)。
+  BYD_HAN_DMI_22 = BydPlatformConfig(
+    [BydCarDocs("BYD HAN DMI 2022")],
+    CarSpecs(mass=2080., wheelbase=2.920, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+  )
+
+  BYD_HAN_DMI_22R = BydPlatformConfig(
+    [BydCarDocs("BYD HAN DMI 2022-22")],
+    CarSpecs(mass=2080., wheelbase=2.920, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_CURISE_MODE | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+  )
+
+  BYD_HAN_DMI_25 = BydPlatformConfig(
+    [BydCarDocs("BYD HAN DMI 2025")],
+    CarSpecs(mass=2080., wheelbase=2.920, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+  )
+
+  BYD_TANG_DMI_24 = BydPlatformConfig(
+    [BydCarDocs("BYD TANG DMI 2024")],
+    CarSpecs(mass=2250., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+  )
+
+  BYD_TANG_DMP_22 = BydPlatformConfig(
+    [BydCarDocs("BYD TANG DMP 2022")],
+    CarSpecs(mass=2445., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.60, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_CURISE_MODE | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+  )
+
+  BYD_TANG_DMP_23 = BydPlatformConfig(
+    [BydCarDocs("BYD TANG DMP 2023")],
+    CarSpecs(mass=2445., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.60, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+  )
+
+  BYD_QIN_PRO = BydPlatformConfig(
+    [BydCarDocs("BYD QIN PRO 2018-20")],
+    CarSpecs(mass=2250., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    flags=0,  # 早期平台, 老协议 (沿用默认解析路径)
+  )
+
 
 class LKASConfig:
   DISABLE = 0
@@ -201,7 +264,11 @@ FW_QUERY_CONFIG = FwQueryConfig(
   ],
 )
 
-PLATFORM_HANTANG_DMEV = {CAR.BYD_HAN_DM_20, CAR.BYD_HAN_EV_20, CAR.BYD_TANG_DM}
+# P1 新增车型归属 (safety 侧只看 SEAL(0x20)/OP_LONG(0x40) 位, 平台位仅为历史语义)
+PLATFORM_NEWGEN_TORQUE = {CAR.BYD_HAN_DMI_22, CAR.BYD_HAN_DMI_22R, CAR.BYD_HAN_DMI_25, CAR.BYD_TANG_DMI_24,
+                          CAR.BYD_TANG_DMP_22, CAR.BYD_TANG_DMP_23, CAR.BYD_QIN_PRO}
+
+PLATFORM_HANTANG_DMEV = {CAR.BYD_HAN_DM_20, CAR.BYD_HAN_EV_20, CAR.BYD_TANG_DM} | PLATFORM_NEWGEN_TORQUE
 PLATFORM_TANG_DMI = {CAR.BYD_TANG_DMI_21}
 PLATFORM_SONG_PLUS_DMI = {CAR.BYD_SONG_PLUS_DMI_21, CAR.BYD_SONG_PLUS_DMI_22, CAR.BYD_SONG_PLUS_DMI_23, CAR.BYD_SONG_PRO_DMI_22}
 PLATFORM_QIN_PLUS_DMI = {CAR.BYD_QIN_PLUS_DMI_23}
@@ -234,10 +301,11 @@ SONG_PLUS_380_DECODE_CAR = {CAR.BYD_SONG_PLUS_DMI_21, CAR.BYD_SONG_PLUS_DMI_22}
 RADAR_MRR_CAR = {CAR.BYD_SONG_PLUS_DMI_23}
 
 # use torque lat control, otherwise use angle mode
-TORQUE_LAT_CAR = {CAR.BYD_HAN_DM_20, CAR.BYD_HAN_EV_20, CAR.BYD_TANG_DM, CAR.BYD_SONG_PLUS_DMI_21, CAR.BYD_SONG_PLUS_DMI_22, CAR.BYD_SONG_PLUS_DMI_23}
+# 2026-11-01 P1: 新增 7 款扭矩车型 (源 TORQUE_LAT_CAR 全集一致); 无 siglin 表的走线性扭矩路径
+TORQUE_LAT_CAR = {CAR.BYD_HAN_DM_20, CAR.BYD_HAN_EV_20, CAR.BYD_TANG_DM, CAR.BYD_SONG_PLUS_DMI_21, CAR.BYD_SONG_PLUS_DMI_22, CAR.BYD_SONG_PLUS_DMI_23} | PLATFORM_NEWGEN_TORQUE
 
 # use experimental long mode
-EXP_LONG_CAR = {CAR.BYD_HAN_DM_20, CAR.BYD_HAN_EV_20, CAR.BYD_TANG_DM, CAR.BYD_SONG_PLUS_DMI_21, CAR.BYD_SONG_PLUS_DMI_22, CAR.BYD_SONG_PLUS_DMI_23}
+EXP_LONG_CAR = {CAR.BYD_HAN_DM_20, CAR.BYD_HAN_EV_20, CAR.BYD_TANG_DM, CAR.BYD_SONG_PLUS_DMI_21, CAR.BYD_SONG_PLUS_DMI_22, CAR.BYD_SONG_PLUS_DMI_23} | PLATFORM_NEWGEN_TORQUE
 
 DBC = CAR.create_dbc_map()
 
