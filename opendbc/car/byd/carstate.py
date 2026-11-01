@@ -15,11 +15,11 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car import Bus, create_button_events, structs
 from opendbc.car.interfaces import CarStateBase
 from opendbc.car.byd.debug_log import acc_debug_write
-from opendbc.car.byd.values import DBC, CanBus, LKASConfig, CarControllerParams, CAR, PLATFORM_SONG_PLUS_DMI, MRR_DIRECT_DECODE_CAR, RADAR_MRR_CAR, BydFlags
+from opendbc.car.byd.values import DBC, CanBus, LKASConfig, CarControllerParams, CAR, PLATFORM_SONG_PLUS_DMI, MRR_DIRECT_DECODE_CAR, RADAR_MRR_CAR, PT_RADAR_CAR, BydFlags
 
-import os
-
-BYD_RADAR = os.getenv("BYD_RADAR") is not None
+# 雷达数据源开关 (2026-11-01): 原为 BYD_RADAR 环境变量, 改为按车型集合判断——
+# PT_RADAR_CAR 的雷达解析路径均已实车验证 (0x380 直解 / 0x374 单目标), 不再依赖
+# 外部 env (设备上从未设置, 导致 mrr_leading_dist 恒 0 → jerk 恒取最紧档 0.8)。
 
 ButtonType = structs.CarState.ButtonEvent.Type
 
@@ -54,6 +54,7 @@ class CarState(CarStateBase):
     self.is_mrr_direct = CP.carFingerprint in MRR_DIRECT_DECODE_CAR  # 雷达 0x380 直解车型 (与横向 is_tang_dm 无关)
     self.is_radar_mrr = CP.carFingerprint in RADAR_MRR_CAR  # 宋Plus 23款: 0x374 单目标雷达 (无 IsValid 位)
     self.is_song_plus_dmi = CP.carFingerprint in PLATFORM_SONG_PLUS_DMI
+    self.has_pt_radar = CP.carFingerprint in PT_RADAR_CAR  # 原车雷达数据可用 (见模块头注释)
     self.lkas_state = 0  # 0=NotReady/1=Ready/2=Active/3=TemporaryFail
     self.lkas_prepared = False  # 318, EPS to OP
     self.acc_state = 0
@@ -289,7 +290,7 @@ class CarState(CarStateBase):
                       f"lkas_prepared={int(self.lkas_prepared)} hands={int(cp.vl['ACC_EPS_STATE']['ReportHandsNotOnSteeringWheel'])} "
                       f"steer_ang={cp.vl['EPS']['SteeringAngle']:.1f} speed={ret.vEgo*CV.MS_TO_KPH:.1f}\n")
 
-    if BYD_RADAR:
+    if self.has_pt_radar:
       if self.is_mrr_direct:
         # MRR 直解车型: 雷达由 radar_interface 直解 (0x380~0x3FF), 注入模式默认无前车(199)。
         self.mrr_leading_dist = 199
@@ -371,7 +372,7 @@ class CarState(CarStateBase):
       ("ACC_CMD", 50),
       ("ACC_MPC_STATE", 50),
     ]
-    if BYD_RADAR:
+    if CP.carFingerprint in PT_RADAR_CAR:
       if CP.carFingerprint in MRR_DIRECT_DECODE_CAR:
         # MRR 直解车型: 雷达由 radar_interface 直解 (0x380~0x3FF), carstate 不订阅。
         pass

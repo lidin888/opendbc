@@ -869,8 +869,10 @@ class RadarInterface(RadarInterfaceBase):
                         self._song_plus_hist.pop(k, None)
                         self._pts_not_seen.pop(k, None)
             self.pts.update(self._pts_cache)
+            if not self.rcp.can_valid:
+                return None
             ret = structs.RadarData()
-            ret.errors.canError = not self.rcp.can_valid
+            ret.errors.canError = False
             ret.points = list(self.pts.values())
             return ret
 
@@ -1146,6 +1148,8 @@ class RadarInterface(RadarInterfaceBase):
         records = can_strings[0][1]
         slot_map = _tang_build_slot_map(records)
 
+        if not slot_map:
+            return None  # 无 0x380~0x3FF 雷达帧, 不产出 (同 _update_song_plus 契约)
         self._pts_cache.clear()
         for sidx in sorted(slot_map.keys()):
             sm = slot_map[sidx]
@@ -1189,8 +1193,12 @@ class RadarInterface(RadarInterfaceBase):
 
         self.pts.update(self._pts_cache)
 
+        # 契约 (官方 test_car_interfaces): CAN 无效时不产出 RadarData——
+        # radard 无新帧 → tracks 自然老化; 若照发空/陈旧点会被当有效雷达目标。
+        if not self.rcp.can_valid:
+            return None
         ret = structs.RadarData()
-        ret.errors.canError = not self.rcp.can_valid
+        ret.errors.canError = False
         ret.points = list(self.pts.values())
         return ret
 
@@ -1210,6 +1218,10 @@ class RadarInterface(RadarInterfaceBase):
     # -----------------------------------------------------------------
     def _update_song_plus(self, can_strings):
         records = can_strings[0][1]
+        # 契约: 本帧没有任何 0x380~0x3FF 雷达帧 → 不产出 RadarData (官方测试要求;
+        # 生产语义: 无雷达帧 = 无新目标, radard 侧 tracks 自然老化)。
+        if not any(0x380 <= _r[0] <= 0x3FF and len(_r[1]) >= 8 for _r in records):
+            return None
         now = time.monotonic()
         v_ego = self.v_ego if hasattr(self, 'v_ego') else 0.0
 
@@ -1713,8 +1725,12 @@ class RadarInterface(RadarInterfaceBase):
 
         self.pts.update(self._pts_cache)
 
+        # 契约 (官方 test_car_interfaces): CAN 无效时不产出 RadarData——
+        # radard 无新帧 → tracks 自然老化; 若照发空/陈旧点会被当有效雷达目标。
+        if not self.rcp.can_valid:
+            return None
         ret = structs.RadarData()
-        ret.errors.canError = not self.rcp.can_valid
+        ret.errors.canError = False
         ret.points = list(self.pts.values())
         return ret
 

@@ -11,6 +11,7 @@ from opendbc.car.byd.values import (
   CanBus,
   BydSafetyFlags,
   MPC_ACC_CAR,
+  PT_RADAR_CAR,
   TORQUE_LAT_CAR,
   EXP_LONG_CAR,
   PLATFORM_HANTANG_DMEV,
@@ -39,9 +40,9 @@ NON_LINEAR_TORQUE_PARAMS = {
   CAR.BYD_SONG_PLUS_DMI_23: [1.335, 2.197, 0.0282],
 }
 
-import os
-
-BYD_RADAR = os.getenv("BYD_RADAR") is not None
+# 雷达可用性按车型集合判定 (2026-11-01): 原 BYD_RADAR 环境变量在设备侧从未设置,
+# 导致 radarUnavailable 恒 True (该字段 controls 不消费, 但语义应正确)。
+# PT_RADAR_CAR 的雷达解析均有实车依据; 非该集合车型 = 无雷达数据。
 
 
 class CarInterface(CarInterfaceBase):
@@ -126,11 +127,7 @@ class CarInterface(CarInterfaceBase):
     ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.byd)]
 
     ret.dashcamOnly = False
-    # disable simple pt radar due to mpc solver issue in official OP. It works with carrot/sunny/forg.
-    if BYD_RADAR:
-      ret.radarUnavailable = False
-    else:
-      ret.radarUnavailable = True  # candidate not in PT_RADAR_CAR
+    ret.radarUnavailable = candidate not in PT_RADAR_CAR
 
     ret.minEnableSpeed = -1.0
     ret.enableBsm = 0x418 in fingerprint[CanBus.ESC]
