@@ -268,8 +268,12 @@ class CarState(CarStateBase):
       # 误判 steerFaultTemporary → 第二次激活弹"转向暂时不可用"+SOFT_DISABLE被踢出。
       ret.steerFaultTemporary = bool((self.lkas_state == 3) or self.eps_warning)
     else:
-      # 汉DM/汉EV: 保持原逻辑。
-      ret.steerFaultTemporary = bool((self.acc_state == 7) or self.eps_warning)
+      # 汉DM/汉EV: 只认 EPS 真实故障 (2026-11-01 对齐宋分支)。
+      # acc_state==7 是相机 HUD 的 ACC_ERROR (宋车 2026-08-16 实测: OP纵向退出未补发
+      # Act=0 时出现, 此时 EPS 全正常 lkas_state=0/eps_warning=0), 不应算转向故障;
+      # 20汉EV 实车日志 AccState 恒 0/2, 亦无 7 的转向语义。误判会触发
+      # steerFaultTemporary → 横向退避 → "转向暂时不可用"被踢出。
+      ret.steerFaultTemporary = bool(self.eps_warning)
 
     self.acc_active_last = ret.cruiseState.enabled
 
