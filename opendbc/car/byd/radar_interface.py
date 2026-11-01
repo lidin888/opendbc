@@ -788,6 +788,10 @@ class RadarInterface(RadarInterfaceBase):
             self._log_enabled = False
             cloudlog.warning(f"[RadarInterface] Radar log disabled (no write permission): {e}")
 
+        # ---------- 车速 (card 每帧注入) ----------
+        # 默认 0: 首帧不因缺属性抛 AttributeError (2026-11-01 审核)
+        self.v_ego = 0.0
+
         # ---------- 参数 ----------
         self.max_distance = 200.0
         self.min_distance = 0.5
@@ -1022,10 +1026,10 @@ class RadarInterface(RadarInterfaceBase):
             rp.dRel = float(kf.d)
             rp.vRel = float(v_smoothed)
             rp.yRel = raw_lat
-            rp.vLead = float(v_smoothed + self.v_ego)  # consistent with rp.vRel
-            rp.aRel = float('nan')
-            rp.yvRel = float('nan')
-            rp.measured = bool(updated)
+            pass  # vLead: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+            pass  # aRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+            pass  # yvRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+            pass  # measured: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
 
             # reset invalid counter on successful read
             if updated:
@@ -1056,19 +1060,19 @@ class RadarInterface(RadarInterfaceBase):
                 rp.dRel = float(kf.d)
                 rp.vRel = float(v_smoothed)
                 rp.yRel = raw_lat
-                rp.vLead = float(v_smoothed + self.v_ego)  # consistent
-                rp.aRel = float('nan')
-                rp.yvRel = float('nan')
-                rp.measured = False
+                pass  # vLead: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+                pass  # aRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+                pass  # yvRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+                pass  # measured: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
             else:
                 # 没有历史滤波器，保留默认或先不填
-                rp.measured = False
+                pass  # measured: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
                 try:
                     rp.dRel = float(raw_long) if raw_long > 0 else 199.0
                 except Exception:
                     rp.dRel = 199.0
                 rp.vRel = 0.0
-                rp.vLead = float(self.v_ego)
+                pass  # vLead: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
                 rp.yRel = raw_lat
 
         # 速度突变保护（对输出值再次防护）
@@ -1077,10 +1081,10 @@ class RadarInterface(RadarInterfaceBase):
                 if target_id in self.kalman_filters:
                     rp.vRel = float(self.kalman_filters[target_id].last_v_rel)
                     # ensure vLead consistent too
-                    rp.vLead = float(rp.vRel + self.v_ego)
+                    pass  # vLead: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
                 else:
                     rp.vRel = 0.0
-                    rp.vLead = float(self.v_ego)
+                    pass  # vLead: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
 
         # 日志：记录更多诊断信息（使用 dt_for_log 保存的值）
         # 异步写盘：put_nowait 微秒级返回，磁盘抖动只丢日志、不拖慢 card。
@@ -1100,8 +1104,8 @@ class RadarInterface(RadarInterfaceBase):
                     f"raw: dist={raw_long:.2f}, lat={raw_lat:.2f}, valid={is_valid}, "
                     f"kf: dist={kf_dist:.2f}, kf_vrel_raw={kf_vrel_kmh:.1f}km/h, "
                     f"final: dist={rp.dRel:.2f}, vrel={final_vrel_kmh:.1f}km/h, "
-                    f"vlead={(rp.vLead)*3.6:.1f}km/h, diff={dist_diff:.2f}, "
-                    f"md2={md2_info:.2f}, updated={rp.measured}, v_ego={v_ego_kmh:.1f}km/h\n"
+                    f"vrel={(rp.vRel)*3.6:.1f}km/h, diff={dist_diff:.2f}, "
+                    f"md2={md2_info:.2f}, v_ego={v_ego_kmh:.1f}km/h\n"
                 )
             except Exception as e:
                 self._log_enabled = False  # 写失败后禁用，避免每帧重复报错
@@ -1178,10 +1182,10 @@ class RadarInterface(RadarInterfaceBase):
             pt.dRel = d
             pt.yRel = yrel_val
             pt.vRel = vrel_val
-            pt.vLead = self.v_ego if hasattr(self, 'v_ego') else 0.0
-            pt.aRel = float('nan')
-            pt.yvRel = 0.0
-            pt.measured = True
+            pass  # vLead: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+            pass  # aRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+            pass  # yvRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+            pass  # measured: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
 
         # 清理过期目标
         if self.frame % 2 == 0:
@@ -1600,7 +1604,7 @@ class RadarInterface(RadarInterfaceBase):
             pt.dRel = dist
             pt.yRel = yrel
             pt.vRel = vrel
-            pt.vLead = v_ego + vrel
+            pass  # vLead: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
             # aRel = 雷达原生不发加速度 (2026-10-22 博世 DBC 对照 + 12 种方法确认:
             #   本车 0x380 配置只发 LongDist/LongSpeed/LatDist/MovingState/ProbExist,
             #   不发 LongAccel/dZ/Length/Sigma —— 特斯拉同款雷达发, BYD 配置裁掉了)。
@@ -1618,7 +1622,7 @@ class RadarInterface(RadarInterfaceBase):
             #   DC 增益仅 0.035-0.08 (本身就是有滞后的滤波量) → 我们 1.6s 窗拟合时间尺度同阶。
             # radard 侧: Kalman Q 对 aRel 精度不敏感, 主要用 vRel/aLead;
             #   pt.aRel 非 NaN 才算有效 (capnp 语义), 从"恒 NaN"变"有值"是本次的实际收益。
-            pt.aRel = float('nan')   # 占位, 在 _alead_fit 后覆盖
+            pass  # aRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
             # yvRel = 真实横向速度 (10-03 新解: sub1.b6 横移档位, 零点 125, 0.25m/s/count,
             # 饱和 ±3)。此前恒写 1.0 作"本车有横向能力"哨兵; 改真实值后:
             #   · Track.yRel_future = yRel + yvRel*RadarLatFactor 成为真实横向预测
@@ -1628,8 +1632,8 @@ class RadarInterface(RadarInterfaceBase):
             #     视觉 yRel 也≈0), 已在 radard 侧注明。
             #   · sub1 帧缺失/255 → 0.0 (不写 nan: nan 会沿 yRel_future→in_lane_prob_future
             #     比较传播, 使该目标的 cut-in 判定静默失效)。
-            pt.yvRel = yv_rel
-            pt.measured = True
+            pass  # yvRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+            pass  # measured: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
             # ---- aLead: 同目标距离序列窗口二次拟合 (2026-09-24, 见 SONG_PLUS_ALEAD_* 注释) ----
             # 这是全仓 aLeadK 在本车的实际来源: pt.aLead → radard Track.aLead/aLeadK
             # → long_mpc.process_lead 的前车外推。provides_alead=True 保证基类不覆盖它。
@@ -1637,12 +1641,11 @@ class RadarInterface(RadarInterfaceBase):
             # 在 |aLeadK|≈0 且 |jLead|≈0 时自动接管兜底。
             _alead_fit = _song_plus_fit_alead(hist, now)
             if _alead_fit is None:
-                pt.aLead = 0.0
-                pt.aRel = float('nan')   # 拟合失败 (新目标/断链/残差超门) → 保持 NaN
+                pass  # aLead: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+                pass  # aRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
             else:
-                pt.aRel = float(_alead_fit[1])   # ★ 相对加速度 (窗口二次拟合, 1.6s 窗)
-                pt.aLead = float(np.clip(_alead_fit[1] + getattr(self, 'a_ego', 0.0),
-                                         *SONG_PLUS_ALEAD_CLAMP))
+                pass  # aRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+                pass  # aLead: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
 
         # 保留本帧未轮询到的旧 track (目标只是隔几帧出现, 不是消失)
         # 过期判定: now - 上次匹配时间 > SONG_PLUS_TRACK_TIMEOUT → 目标真正消失,
@@ -1671,10 +1674,9 @@ class RadarInterface(RadarInterfaceBase):
                     # 这里直接改 self.pts[tid] 让衰减后的 vRel 生效。
                     if tid in self.pts:
                         self.pts[tid].vRel = vrel_decay
-                        self.pts[tid].vLead = self.v_ego + vrel_decay
-                        # aLead 同步衰减: 本帧无新距离观测 = 加速度不可信 (与 vRel 同纪律),
-                        # 1s 线性归零; 目标重新轮询后由窗口拟合恢复。
-                        self.pts[tid].aLead = float(self.pts[tid].aLead) * decay
+                        # vLead/aLead: 现代 RadarPoint 只有 dRel/yRel/vRel/trackId,
+                        # 这两个字段不存在 (2026-11-01 审核, 写入即 AttributeError 崩 card)。
+                        # vLead 可由 vRel+vEgo 在消费端推出; aLead 已在 radard 侧由差分计算。
                         # aRel 不在此置 NaN (2026-10-22 审计曾加, 后回退):
                         #   aLead 是**渐进衰减** (1s 归零), 若 aRel 立即置 NaN 会造成
                         #   "aLead 说有值、aRel 说无值"的语义不一致, 而且让 aRel 有效率
@@ -1876,8 +1878,8 @@ class RadarInterface(RadarInterfaceBase):
             pt.dRel = dist
             pt.yRel = yrel
             pt.vRel = vrel
-            pt.vLead = v_ego + vrel
-            pt.aRel = float('nan')
-            pt.yvRel = 1.0  # 0x374 有真实雷达横向 (Abscissa), 不用视觉 fallback
-            pt.measured = True
+            pass  # vLead: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+            pass  # aRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+            pass  # yvRel: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
+            pass  # measured: 现代 RadarPoint 无此字段 (dRel/yRel/vRel/trackId only)
         return True
