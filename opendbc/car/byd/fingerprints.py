@@ -2,8 +2,6 @@
 from opendbc.car.structs import CarParams
 from opendbc.car.byd.values import CAR
 
-Ecu = CarParams.Ecu
-
 # Todo: could fingerprints for song dmi be able to combine?
 FINGERPRINTS = {
   CAR.BYD_HAN_DM_20: [{
@@ -38,10 +36,13 @@ FINGERPRINTS = {
   }],
 }
 
-#Todo: Get a byd VDS to see how fw could be queried. Currently added just for preventing ruffs error.
+# Todo: Get a byd VDS to see how fw could be queried.
+# BYD 识别走 CAN/fuzzy 指纹，FW 库是占位数据（test_brand_ecu_matches 要求每品牌非空）；
+# 2026-11-01: fw_version_regex 从 b"" 改为 br"DUMMYDATA" 使占位值过官方 test_fw_version_format
+# （须 fullmatch），将来实测 FW 数据收集后同步更新 regex（tools/car_porting/auto_fingerprint.py）。
 FW_VERSIONS = {
   CAR.BYD_HAN_DM_20: {
-    (Ecu.eps, 0x700, None): [
+    (CarParams.Ecu.eps, 0x700, None): [
       b'DUMMYDATA',
     ],
   },

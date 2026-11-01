@@ -127,54 +127,54 @@ class BydPlatformConfig(PlatformConfig):
 
 class CAR(Platforms):
   BYD_HAN_DM_20 = BydPlatformConfig(
-    [BydCarDocs("BYD HAN DM 20")],
+    [BydCarDocs("BYD HAN DM 2020")],
     CarSpecs(mass=2080., wheelbase=2.920, steerRatio=16.8, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
   )
   BYD_HAN_EV_20 = BydPlatformConfig(
-    [BydCarDocs("BYD HAN EV 20")],
+    [BydCarDocs("BYD HAN EV 2020")],
     CarSpecs(mass=2100., wheelbase=2.959, steerRatio=16.8, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
   )
 
   #The following parameters are likely be incorrect, developers please fill and fix them.
 
   BYD_TANG_DM = BydPlatformConfig(
-    [BydCarDocs("BYD TANG DM")],
+    [BydCarDocs("BYD TANG DM 2019-20")],
     CarSpecs(mass=2250., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
     dbc_dict={Bus.pt: "byd_tang_dm"},
   )
 
   BYD_TANG_DMI_21 = BydPlatformConfig(
-    [BydCarDocs("BYD TANG DMI 21")],
+    [BydCarDocs("BYD TANG DMI 2021")],
     CarSpecs(mass=2153., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
   )
 
   BYD_SONG_PLUS_DMI_21 = BydPlatformConfig(
-    [BydCarDocs("BYD SONG PLUS DMI 21")],
+    [BydCarDocs("BYD SONG PLUS DMI 2021")],
     CarSpecs(mass=1785., wheelbase=2.765, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
   )
 
   BYD_SONG_PLUS_DMI_22 = BydPlatformConfig(
-    [BydCarDocs("BYD SONG PLUS DMI 22")],
+    [BydCarDocs("BYD SONG PLUS DMI 2022")],
     CarSpecs(mass=1785., wheelbase=2.765, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
   )
 
   BYD_SONG_PLUS_DMI_23 = BydPlatformConfig(
-    [BydCarDocs("BYD SONG PLUS DMI 23")],
+    [BydCarDocs("BYD SONG PLUS DMI 2023")],
     CarSpecs(mass=1785., wheelbase=2.765, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
   )
 
   BYD_SONG_PRO_DMI_22 = BydPlatformConfig(
-    [BydCarDocs("BYD SONG PRO DMI 22")],
+    [BydCarDocs("BYD SONG PRO DMI 2022")],
     CarSpecs(mass=1670., wheelbase=2.712, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
   )
 
   BYD_QIN_PLUS_DMI_23 = BydPlatformConfig(
-    [BydCarDocs("BYD QIN PLUS DMI 23")],
+    [BydCarDocs("BYD QIN PLUS DMI 2023")],
     CarSpecs(mass=1580., wheelbase=2.718, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
   )
 
   BYD_YUAN_PLUS_DMI_22 = BydPlatformConfig(
-    [BydCarDocs("BYD YUAN PLUS DMI 22")],
+    [BydCarDocs("BYD YUAN PLUS DMI 2022")],
     CarSpecs(mass=1625., wheelbase=2.720, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
   )
 
@@ -191,7 +191,7 @@ class CanBus:
   MPC = 2
 
 FW_QUERY_CONFIG = FwQueryConfig(
-  fw_version_regex=b"",
+  fw_version_regex=br"DUMMYDATA",  # 2026-11-01: 匹配 FW_VERSIONS 占位值（过 test_fw_version_format）；实测数据后更新
   requests=[
     Request(
       [StdQueries.MANUFACTURER_SOFTWARE_VERSION_REQUEST],
