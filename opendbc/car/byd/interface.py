@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 from math import exp
 
+import numpy as np
+
 from opendbc.car import get_safety_config, structs
 from opendbc.car.common.conversions import Conversions as CV
-from opendbc.car.interfaces import CarInterfaceBase, TorqueFromLateralAccelCallbackType
+from opendbc.car.interfaces import CarInterfaceBase, TorqueFromLateralAccelCallbackType, LateralAccelFromTorqueCallbackType
 from opendbc.car.byd.values import (
   CAR,
   CanBus,
@@ -47,13 +49,13 @@ class CarInterface(CarInterfaceBase):
   CarController = CarController
   RadarInterface = RadarInterface
 
-  def torque_from_lateral_accel_siglin(
-    self,
-    lateral_acceleration: float,
-    torque_params: structs.CarParams.LateralTorqueTuning,
-  ) -> float:
-    # BYD 非线性扭矩模型 (ABC): torque = sig(latAccel·a)·b + latAccel·c
-    # friction 由 SP 的 latcontrol_torque ff 侧处理, 此处只回曲线 (否则双重摩擦)。
+  # BYD stock latAccelFactor (torque_data/params.toml [2.2, 2.5, 0.145] 首值)。
+  # 用于把 torque_params.latAccelFactor 旋钮(手调/Self-Tune 自调谐)映射到 siglin 曲线增益。
+  STOCK_LAT_ACCEL_FACTOR = 2.2
+
+  @staticmethod
+  def _siglin_curve(lateral_acceleration: float, abc: tuple[float, float, float]) -> float:
+    # BYD 非线性扭矩模型 (ABC) 曲线本体: torque = sig(latAccel·a)·b + latAccel·c
     def sig(val):
       # https://timvieira.github.io/blog/post/2014/02/11/exp-normalize-trick
       if val >= 0:
@@ -65,12 +67,35 @@ class CarInterface(CarInterfaceBase):
     # The "lat_accel vs torque" relationship is assumed to be the sum of "sigmoid + linear" curves
     # An important thing to consider is that the slope at 0 should be > 0 (ideally >1)
     # This has big effect on the stability about 0 (noise when going straight)
-    non_linear_torque_params = NON_LINEAR_TORQUE_PARAMS.get(self.CP.carFingerprint)
-    if non_linear_torque_params is None:
-      raise ValueError(f"NON_LINEAR_TORQUE_PARAMS missing for {self.CP.carFingerprint}")
-    a, b, c = non_linear_torque_params
-    steer_torque = (sig(lateral_acceleration * a) * b) + (lateral_acceleration * c)
-    return float(steer_torque)
+    a, b, c = abc
+    return float((sig(lateral_acceleration * a) * b) + (lateral_acceleration * c))
+
+  def torque_from_lateral_accel_siglin(
+    self,
+    lateral_acceleration: float,
+    torque_params: structs.CarParams.LateralTorqueTuning,
+  ) -> float:
+    # friction 由 SP 的 latcontrol_torque ff 侧处理, 此处只回曲线 (否则双重摩擦)。
+    # scale 让 latAccelFactor 旋钮(手调/Self-Tune 自调谐)对 BYD 生效: factor 越大越轻
+    # (对齐线性语义 torque=lataccel/factor); 无人覆写时 factor=2.2 → scale=1 纯 ABC。
+    abc = NON_LINEAR_TORQUE_PARAMS[self.CP.carFingerprint]
+    scale = self.STOCK_LAT_ACCEL_FACTOR / float(torque_params.latAccelFactor)
+    return self._siglin_curve(lateral_acceleration, abc) * scale
+
+  def lateral_accel_from_torque(self) -> LateralAccelFromTorqueCallbackType:
+    if self.CP.carFingerprint in NON_LINEAR_TORQUE_PARAMS:
+      # GM 同款查表反演 (2026-11-01 补: 此前缺反函数 → update_limits 的 PID 限幅
+      # 按线性反算, 与 siglin 前向不一致)。曲线单调(a,b,c>0), np.interp 反查。
+      abc = NON_LINEAR_TORQUE_PARAMS[self.CP.carFingerprint]
+      lataccel_grid = np.arange(-5.0, 5.0, 0.01)
+      curve_grid = [self._siglin_curve(x, abc) for x in lataccel_grid]
+
+      def lateral_accel_from_torque_siglin(torque: float, torque_params: structs.CarParams.LateralTorqueTuning) -> float:
+        scale = self.STOCK_LAT_ACCEL_FACTOR / float(torque_params.latAccelFactor)
+        return float(np.interp(torque / scale, curve_grid, lataccel_grid))
+      return lateral_accel_from_torque_siglin
+    else:
+      return self.lateral_accel_from_torque_linear
 
   def torque_from_lateral_accel(self) -> TorqueFromLateralAccelCallbackType:
     if self.CP.carFingerprint in NON_LINEAR_TORQUE_PARAMS:
