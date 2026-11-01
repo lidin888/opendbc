@@ -20,7 +20,7 @@ def byd_checksum(byte_key, dat):
 # MPC -> Panda -> EPS
 def create_steering_control(packer, CP, cam_msg: dict, req_torque, req_prepare, active, hud_control, counter):
   values = {
-    s: cam_msg[s]
+    s: cam_msg.get(s, 0)
     for s in [
       "AutoFullBeamState",
       "LeftLaneState",
@@ -73,7 +73,7 @@ def create_steering_control(packer, CP, cam_msg: dict, req_torque, req_prepare, 
 # op long control
 def acc_cmd(packer, CP, cam_msg: dict, mrr_leaddist, accel, rfss, sss, longActive, jerk_mpc=0.0):
   values = {
-    s: cam_msg[s]
+    s: cam_msg.get(s, 0)
     for s in [
       "AccelCmd",
       "ComfortBandUpper",
@@ -166,7 +166,7 @@ def acc_cmd(packer, CP, cam_msg: dict, mrr_leaddist, accel, rfss, sss, longActiv
 #     byd_generic_pt.dbc VAL_ 813 铁证: 4"4BAR" 3"3BAR" 2"2BAR" 1"1BAR"。)
 def create_acc_hud_adas(packer, cam_msg: dict, setspeed, setdistance, accstate, counter):
   values = {
-    s: cam_msg[s]
+    s: cam_msg.get(s, 0)
     for s in [
       "SetSpeed",
       "HasLead",
@@ -187,9 +187,9 @@ def create_acc_hud_adas(packer, cam_msg: dict, setspeed, setdistance, accstate, 
   }
   if accstate is None:
     # 待机: 透传相机值, 保持与panda转发帧一致(OP替代转发, 内容不变)
-    values["SetSpeed"] = cam_msg["SetSpeed"]
-    values["SetDistance"] = cam_msg["SetDistance"]
-    values["AccState"] = cam_msg["AccState"]
+    values["SetSpeed"] = cam_msg.get("SetSpeed", 0)
+    values["SetDistance"] = cam_msg.get("SetDistance", 0)
+    values["AccState"] = cam_msg.get("AccState", 0)
   else:
     # 激活: 覆盖为原车ACC激活态 (commalog0811 铁证: state=3 + SetSpeed跟随设定)
     values["SetSpeed"] = setspeed
@@ -221,9 +221,9 @@ def create_fake_318(packer, CP, esc_msg: dict, faketorque, laks_reqprepare, laks
     "SETME6_0xFFF",
   ]
   if is_tang_dm:
-    values = {s: esc_msg[s] for s in ["LKAS_State"] + base_fields}
+    values = {s: esc_msg.get(s, 0) for s in ["LKAS_State"] + base_fields}
   else:
-    values = {s: esc_msg[s] for s in ["LKAS_Prepared", "CruiseActivated"] + base_fields}
+    values = {s: esc_msg.get(s, 0) for s in ["LKAS_Prepared", "CruiseActivated"] + base_fields}
 
   values["ReportHandsNotOnSteeringWheel"] = 0
   values["Counter"] = counter

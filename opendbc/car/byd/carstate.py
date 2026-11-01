@@ -39,6 +39,10 @@ class CarState(CarStateBase):
     self.acc_hud_adas_counter = 0
     self.acc_mpc_state_counter = 0
     self.acc_cmd_counter = 0
+    # carcontroller 会在任意时序访问这两个属性(如 card 重启/首帧 carControl 早于 can):
+    # 必须在 __init__ 初始化, 否则 AttributeError 直接崩 card 进程 (2026-11-01 日志回放抓到)。
+    self.eps_state_counter = 0
+    self.steeringRateDegAbs = 0.0
 
     self.eps_warning = False
 
@@ -71,9 +75,12 @@ class CarState(CarStateBase):
 
     # self.prev_angle = 0
 
-    self.cam_lkas = None
-    self.cam_acc = None
-    self.esc_eps = None
+    # 初始化为空 dict（v9 原为 0）: carcontroller 侧已加 .get 兜底, 双保险——
+    # CAN 报文尚未到达时调用 acc_cmd/create_fake_318 也不会 TypeError。
+    self.cam_lkas = {}
+    self.cam_acc = {}
+    self.esc_eps = {}
+    self.cam_adas = {}
 
     self.mrr_leading_dist = 0
     self.acc_has_lead = False
