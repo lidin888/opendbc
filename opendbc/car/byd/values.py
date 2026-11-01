@@ -163,30 +163,31 @@ class CAR(Platforms):
   BYD_TANG_DMI_21 = BydPlatformConfig(
     [BydCarDocs("BYD TANG DMI 2021")],
     CarSpecs(mass=2153., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
-    flags=BydFlags.ALT_INDICATOR,  # 源 flags=1077 含 bit2: 转向灯走 TURN_SIGNAL_SWITCH
+    flags=0,  # 非宋系: 转向灯走 byte0 bit4/5 (用户实测口径)
   )
 
   BYD_SONG_PLUS_DMI_21 = BydPlatformConfig(
     [BydCarDocs("BYD SONG PLUS DMI 2021")],
     CarSpecs(mass=1785., wheelbase=2.765, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
-    flags=BydFlags.ALT_INDICATOR,  # 源 flags=4: 转向灯走 TURN_SIGNAL_SWITCH (实车验证)
+    flags=BydFlags.ALT_INDICATOR,  # 宋系: 转向灯走 TURN_SIGNAL_SWITCH (实车验证)
   )
 
   BYD_SONG_PLUS_DMI_22 = BydPlatformConfig(
     [BydCarDocs("BYD SONG PLUS DMI 2022")],
     CarSpecs(mass=1785., wheelbase=2.765, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
-    flags=BydFlags.ALT_INDICATOR,  # 源 flags=564 含 bit2
+    flags=BydFlags.ALT_INDICATOR,  # 宋系
   )
 
   BYD_SONG_PLUS_DMI_23 = BydPlatformConfig(
     [BydCarDocs("BYD SONG PLUS DMI 2023")],
     CarSpecs(mass=1785., wheelbase=2.765, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
-    flags=BydFlags.ALT_INDICATOR,  # 同宋Plus平台 (源无此车型, 按 21/22 延续)
+    flags=BydFlags.ALT_INDICATOR,  # 宋系 (同平台延续)
   )
 
   BYD_SONG_PRO_DMI_22 = BydPlatformConfig(
     [BydCarDocs("BYD SONG PRO DMI 2022")],
     CarSpecs(mass=1670., wheelbase=2.712, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_INDICATOR,  # 宋系: 转向灯走 TURN_SIGNAL_SWITCH (37/38 等价)
   )
 
   BYD_QIN_PLUS_DMI_23 = BydPlatformConfig(
@@ -197,7 +198,7 @@ class CAR(Platforms):
   BYD_YUAN_PLUS_DMI_22 = BydPlatformConfig(
     [BydCarDocs("BYD YUAN PLUS DMI 2022")],
     CarSpecs(mass=1625., wheelbase=2.720, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
-    flags=BydFlags.ALT_INDICATOR,  # 源 flags=565 含 bit2
+    flags=0,  # 非宋系: 转向灯走 byte0 bit4/5 (用户实测口径)
   )
 
   # ===== P1 批次 (2026-11-01): mypilot 社区包移植的 7 款扭矩模式车型 =====
@@ -207,37 +208,37 @@ class CAR(Platforms):
   BYD_HAN_DMI_22 = BydPlatformConfig(
     [BydCarDocs("BYD HAN DMI 2022")],
     CarSpecs(mass=2080., wheelbase=2.920, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
-    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.CANFD,
   )
 
   BYD_HAN_DMI_22R = BydPlatformConfig(
     [BydCarDocs("BYD HAN DMI 2022-22")],
     CarSpecs(mass=2080., wheelbase=2.920, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
-    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_CURISE_MODE | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_CURISE_MODE | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.CANFD,
   )
 
   BYD_HAN_DMI_25 = BydPlatformConfig(
     [BydCarDocs("BYD HAN DMI 2025")],
     CarSpecs(mass=2080., wheelbase=2.920, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
-    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.CANFD,
   )
 
   BYD_TANG_DMI_24 = BydPlatformConfig(
     [BydCarDocs("BYD TANG DMI 2024")],
     CarSpecs(mass=2250., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
-    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.CANFD,
   )
 
   BYD_TANG_DMP_22 = BydPlatformConfig(
     [BydCarDocs("BYD TANG DMP 2022")],
     CarSpecs(mass=2445., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.60, tireStiffnessFactor=1.0),
-    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_CURISE_MODE | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_CURISE_MODE | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.CANFD,
   )
 
   BYD_TANG_DMP_23 = BydPlatformConfig(
     [BydCarDocs("BYD TANG DMP 2023")],
     CarSpecs(mass=2445., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.60, tireStiffnessFactor=1.0),
-    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.ALT_INDICATOR | BydFlags.CANFD,
+    flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.CANFD,
   )
 
   BYD_QIN_PRO = BydPlatformConfig(

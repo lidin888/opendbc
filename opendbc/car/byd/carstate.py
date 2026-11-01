@@ -203,10 +203,14 @@ class CarState(CarStateBase):
       ret.leftBlinker = cp.vl["STALKS"]["TURN_SIGNAL_SWITCH"] == 3
       ret.rightBlinker = cp.vl["STALKS"]["TURN_SIGNAL_SWITCH"] == 5
     else:
-      # 汉DM20 / 汉EV20 / 唐DM (源 flags 无 bit2): 转向灯在 byte0 bit4/5 独立位。
-      # 2026-11-01 用户实测确认; 此前误用 37/38 → 这三款车转向灯永远不亮。
-      ret.leftBlinker = bool(cp.vl["STALKS"]["LeftIndicatorLegacy"])
-      ret.rightBlinker = bool(cp.vl["STALKS"]["RightIndicatorLegacy"])
+      # 非宋系 (汉/唐/秦/元/新平台): 双源兼容
+      #  ① byte0 bit4/5: 原厂 DBC 未定义的空闲位, 比亚迪在此镜像转向灯
+      #     (20汉EV 实车日志 3.3万帧: 左转 bit4=1 / 右转 bit5=1, 36|3 恒 0)
+      #  ② 36|3 Turn_Signal_Switch: 原厂 baz_han_2021.dbc 定义, VAL_ 表
+      #     2=左短拨 3=左长拨 4=右短拨 5=右长拨 —— 覆盖短拨(变道闪灯)语义
+      combo = int(cp.vl["STALKS"]["TURN_SIGNAL_SWITCH"])
+      ret.leftBlinker = bool(cp.vl["STALKS"]["LeftIndicatorLegacy"]) or combo in (2, 3)
+      ret.rightBlinker = bool(cp.vl["STALKS"]["RightIndicatorLegacy"]) or combo in (4, 5)
 
     ret.steeringAngleOffsetDeg = 0
     ret.steeringAngleDeg = cp.vl["EPS"]["SteeringAngle"]
