@@ -197,11 +197,11 @@ class CarState(CarStateBase):
       ret.rightBlindspot = bool(cp.vl["BSD_RADAR"]["RIGHT_APPROACH"])
 
     if self.CP.flags & BydFlags.ALT_INDICATOR:
-      # 宋Plus / 唐DMi21 / 元Plus / 汉DMi 等 (源 flags 含 bit2): 转向灯为 TURN_SIGNAL_SWITCH
-      # 组合值 (3=左 5=右); 与 v9 的 LeftIndicator(37)/RightIndicator(38) 位拆分在 3/5 语义下等价,
-      # 宋Plus 21 实车验证过转向灯显示正常。
-      ret.leftBlinker = cp.vl["STALKS"]["TURN_SIGNAL_SWITCH"] == 3
-      ret.rightBlinker = cp.vl["STALKS"]["TURN_SIGNAL_SWITCH"] == 5
+      # 宋系 (宋Plus 21/22/23、宋Pro): 独立位 LeftIndicator 37|1 / RightIndicator 38|1。
+      # v9 实车验证写法; 该两位即 TURN_SIGNAL_SWITCH(36|3) 的 bit1/bit2, 但读位比判 ==3/5
+      # 更宽容: 短拨(值2=左/值4=右)同样点亮, 而 ==3/5 只认长拨。
+      ret.leftBlinker = bool(cp.vl["STALKS"]["LeftIndicator"])
+      ret.rightBlinker = bool(cp.vl["STALKS"]["RightIndicator"])
     else:
       # 非宋系 (汉/唐/秦/元/新平台): 双源兼容
       #  ① byte0 bit4/5: 原厂 DBC 未定义的空闲位, 比亚迪在此镜像转向灯
