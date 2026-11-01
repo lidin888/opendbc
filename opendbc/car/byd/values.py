@@ -119,7 +119,7 @@ class BydSafetyFlags(IntFlag):
 class BydFlags(IntFlag):
   CANFD = 1                        # CAN-FD 平台标记 (解析路径无分支, 仅语义标记)
   ANGLE_CONTROL = 2                # 角度控制车型 (P2 阶段, 当前未接入)
-  ALT_INDICATOR = 4                # 转向灯取 TURN_SIGNAL_SWITCH==3/5 (而非 Left/RightIndicator 位)
+  ALT_INDICATOR = 4                # [已由 DBC 分版取代, 不再使用] 原语义: 转向灯走组合值
   SETSPEED_X10 = 8                 # 仪表 SetSpeed 为 x10 编码
   BCM_SEAL = 16                    # 门/安全带来自 660 报文 (2bit 语义: 门!=1开, 带!=2松)
   ALT_ACC_EPS = 32                 # EPS 备用源 (源实现中未消费, 保留语义)
@@ -146,10 +146,12 @@ class CAR(Platforms):
   BYD_HAN_DM_20 = BydPlatformConfig(
     [BydCarDocs("BYD HAN DM 2020")],
     CarSpecs(mass=2080., wheelbase=2.920, steerRatio=16.8, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
   BYD_HAN_EV_20 = BydPlatformConfig(
     [BydCarDocs("BYD HAN EV 2020")],
     CarSpecs(mass=2100., wheelbase=2.959, steerRatio=16.8, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
 
   #The following parameters are likely be incorrect, developers please fill and fix them.
@@ -164,6 +166,7 @@ class CAR(Platforms):
     [BydCarDocs("BYD TANG DMI 2021")],
     CarSpecs(mass=2153., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
     flags=0,  # 非宋系: 转向灯走 byte0 bit4/5 (用户实测口径)
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
 
   BYD_SONG_PLUS_DMI_21 = BydPlatformConfig(
@@ -193,12 +196,14 @@ class CAR(Platforms):
   BYD_QIN_PLUS_DMI_23 = BydPlatformConfig(
     [BydCarDocs("BYD QIN PLUS DMI 2023")],
     CarSpecs(mass=1580., wheelbase=2.718, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
 
   BYD_YUAN_PLUS_DMI_22 = BydPlatformConfig(
     [BydCarDocs("BYD YUAN PLUS DMI 2022")],
     CarSpecs(mass=1625., wheelbase=2.720, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
     flags=0,  # 非宋系: 转向灯走 byte0 bit4/5 (用户实测口径)
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
 
   # ===== P1 批次 (2026-11-01): mypilot 社区包移植的 7 款扭矩模式车型 =====
@@ -209,42 +214,49 @@ class CAR(Platforms):
     [BydCarDocs("BYD HAN DMI 2022")],
     CarSpecs(mass=2080., wheelbase=2.920, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
     flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.CANFD,
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
 
   BYD_HAN_DMI_22R = BydPlatformConfig(
     [BydCarDocs("BYD HAN DMI 2022-22")],
     CarSpecs(mass=2080., wheelbase=2.920, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
     flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_CURISE_MODE | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.CANFD,
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
 
   BYD_HAN_DMI_25 = BydPlatformConfig(
     [BydCarDocs("BYD HAN DMI 2025")],
     CarSpecs(mass=2080., wheelbase=2.920, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
     flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.CANFD,
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
 
   BYD_TANG_DMI_24 = BydPlatformConfig(
     [BydCarDocs("BYD TANG DMI 2024")],
     CarSpecs(mass=2250., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
     flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.CANFD,
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
 
   BYD_TANG_DMP_22 = BydPlatformConfig(
     [BydCarDocs("BYD TANG DMP 2022")],
     CarSpecs(mass=2445., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.60, tireStiffnessFactor=1.0),
     flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_CURISE_MODE | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.SETSPEED_X10 | BydFlags.CANFD,
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
 
   BYD_TANG_DMP_23 = BydPlatformConfig(
     [BydCarDocs("BYD TANG DMP 2023")],
     CarSpecs(mass=2445., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.60, tireStiffnessFactor=1.0),
     flags=BydFlags.ALT_PCM_BTN | BydFlags.ALT_ACC_EPS | BydFlags.BCM_SEAL | BydFlags.CANFD,
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
 
   BYD_QIN_PRO = BydPlatformConfig(
     [BydCarDocs("BYD QIN PRO 2018-20")],
     CarSpecs(mass=2250., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
     flags=0,  # 早期平台, 老协议 (沿用默认解析路径)
+    dbc_dict={Bus.pt: "byd_han_dmev_2020_han"},  # 汉/唐等非宋系: 转向灯 4/5
   )
 
 

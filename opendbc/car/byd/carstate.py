@@ -196,21 +196,13 @@ class CarState(CarStateBase):
       ret.leftBlindspot = bool(cp.vl["BSD_RADAR"]["LEFT_APPROACH"])
       ret.rightBlindspot = bool(cp.vl["BSD_RADAR"]["RIGHT_APPROACH"])
 
-    if self.CP.flags & BydFlags.ALT_INDICATOR:
-      # 宋系 (宋Plus 21/22/23、宋Pro): 独立位 LeftIndicator 37|1 / RightIndicator 38|1。
-      # v9 实车验证写法; 该两位即 TURN_SIGNAL_SWITCH(36|3) 的 bit1/bit2, 但读位比判 ==3/5
-      # 更宽容: 短拨(值2=左/值4=右)同样点亮, 而 ==3/5 只认长拨。
-      ret.leftBlinker = bool(cp.vl["STALKS"]["LeftIndicator"])
-      ret.rightBlinker = bool(cp.vl["STALKS"]["RightIndicator"])
-    else:
-      # 非宋系 (汉/唐/秦/元/新平台): 双源兼容
-      #  ① byte0 bit4/5: 原厂 DBC 未定义的空闲位, 比亚迪在此镜像转向灯
-      #     (20汉EV 实车日志 3.3万帧: 左转 bit4=1 / 右转 bit5=1, 36|3 恒 0)
-      #  ② 36|3 Turn_Signal_Switch: 原厂 baz_han_2021.dbc 定义, VAL_ 表
-      #     2=左短拨 3=左长拨 4=右短拨 5=右长拨 —— 覆盖短拨(变道闪灯)语义
-      combo = int(cp.vl["STALKS"]["TURN_SIGNAL_SWITCH"])
-      ret.leftBlinker = bool(cp.vl["STALKS"]["LeftIndicatorLegacy"]) or combo in (2, 3)
-      ret.rightBlinker = bool(cp.vl["STALKS"]["RightIndicatorLegacy"]) or combo in (4, 5)
+    # 转向灯: 车型差异由 DBC 承担, 代码统一读 LeftIndicator/RightIndicator (v9/VV9 原结构)。
+    #   宋系 → byd_han_dmev_2020.dbc      (Left 37|1 / Right 38|1, 即 TURN_SIGNAL_SWITCH 的 bit1/bit2)
+    #   汉唐等 → byd_han_dmev_2020_han.dbc (Left 4|1  / Right 5|1, 原厂 DBC 未定义的空闲位镜像;
+    #            20汉EV 实车日志 3.3万帧证实: 左转 bit4=1 / 右转 bit5=1, 36|3 恒 0)
+    # 两种位定义下读位均兼容短拨(值2=左短拨/值4=右短拨)与长拨(3=左/5=右)。
+    ret.leftBlinker = bool(cp.vl["STALKS"]["LeftIndicator"])
+    ret.rightBlinker = bool(cp.vl["STALKS"]["RightIndicator"])
 
     ret.steeringAngleOffsetDeg = 0
     ret.steeringAngleDeg = cp.vl["EPS"]["SteeringAngle"]
