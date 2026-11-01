@@ -193,12 +193,16 @@ class CarState(CarStateBase):
       ret.rightBlindspot = bool(cp.vl["BSD_RADAR"]["RIGHT_APPROACH"])
 
     if self.CP.flags & BydFlags.ALT_INDICATOR:
-      # 新平台 (汉DMi22/25/Tang新代): 转向灯在 TURN_SIGNAL_SWITCH 组合值里 (3=左 5=右)
+      # 宋Plus / 唐DMi21 / 元Plus / 汉DMi 等 (源 flags 含 bit2): 转向灯为 TURN_SIGNAL_SWITCH
+      # 组合值 (3=左 5=右); 与 v9 的 LeftIndicator(37)/RightIndicator(38) 位拆分在 3/5 语义下等价,
+      # 宋Plus 21 实车验证过转向灯显示正常。
       ret.leftBlinker = cp.vl["STALKS"]["TURN_SIGNAL_SWITCH"] == 3
       ret.rightBlinker = cp.vl["STALKS"]["TURN_SIGNAL_SWITCH"] == 5
     else:
-      ret.leftBlinker = bool(cp.vl["STALKS"]["LeftIndicator"])
-      ret.rightBlinker = bool(cp.vl["STALKS"]["RightIndicator"])
+      # 汉DM20 / 汉EV20 / 唐DM (源 flags 无 bit2): 转向灯在 byte0 bit4/5 独立位。
+      # 2026-11-01 用户实测确认; 此前误用 37/38 → 这三款车转向灯永远不亮。
+      ret.leftBlinker = bool(cp.vl["STALKS"]["LeftIndicatorLegacy"])
+      ret.rightBlinker = bool(cp.vl["STALKS"]["RightIndicatorLegacy"])
 
     ret.steeringAngleOffsetDeg = 0
     ret.steeringAngleDeg = cp.vl["EPS"]["SteeringAngle"]

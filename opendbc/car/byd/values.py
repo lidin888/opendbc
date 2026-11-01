@@ -163,21 +163,25 @@ class CAR(Platforms):
   BYD_TANG_DMI_21 = BydPlatformConfig(
     [BydCarDocs("BYD TANG DMI 2021")],
     CarSpecs(mass=2153., wheelbase=2.820, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_INDICATOR,  # 源 flags=1077 含 bit2: 转向灯走 TURN_SIGNAL_SWITCH
   )
 
   BYD_SONG_PLUS_DMI_21 = BydPlatformConfig(
     [BydCarDocs("BYD SONG PLUS DMI 2021")],
     CarSpecs(mass=1785., wheelbase=2.765, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_INDICATOR,  # 源 flags=4: 转向灯走 TURN_SIGNAL_SWITCH (实车验证)
   )
 
   BYD_SONG_PLUS_DMI_22 = BydPlatformConfig(
     [BydCarDocs("BYD SONG PLUS DMI 2022")],
     CarSpecs(mass=1785., wheelbase=2.765, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_INDICATOR,  # 源 flags=564 含 bit2
   )
 
   BYD_SONG_PLUS_DMI_23 = BydPlatformConfig(
     [BydCarDocs("BYD SONG PLUS DMI 2023")],
     CarSpecs(mass=1785., wheelbase=2.765, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_INDICATOR,  # 同宋Plus平台 (源无此车型, 按 21/22 延续)
   )
 
   BYD_SONG_PRO_DMI_22 = BydPlatformConfig(
@@ -193,6 +197,7 @@ class CAR(Platforms):
   BYD_YUAN_PLUS_DMI_22 = BydPlatformConfig(
     [BydCarDocs("BYD YUAN PLUS DMI 2022")],
     CarSpecs(mass=1625., wheelbase=2.720, steerRatio=15.0, centerToFrontRatio=0.44, tireStiffnessFactor=1.0),
+    flags=BydFlags.ALT_INDICATOR,  # 源 flags=565 含 bit2
   )
 
   # ===== P1 批次 (2026-11-01): mypilot 社区包移植的 7 款扭矩模式车型 =====
