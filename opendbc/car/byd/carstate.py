@@ -109,8 +109,12 @@ class CarState(CarStateBase):
       self.lkas_state = int(cp.vl["ACC_EPS_STATE"]["LKAS_Prepared"]) | (int(cp.vl["ACC_EPS_STATE"]["CruiseActivated"]) << 1)
       self.lkas_prepared = self.lkas_state in (1, 2)  # Ready/Active 算 prepared; 0 NotReady/3 TemporaryFail 不算
     else:
-      # 汉DM/汉EV: EPS 低2位按独立 bit 语义, 保持原逻辑(bit0=prepared)。
-      self.lkas_prepared = cp.vl["ACC_EPS_STATE"]["LKAS_Prepared"]
+      # 汉DM/汉EV: 2026-11-01 汉EV 实车日志(20汉EV/.comma, 3.3万帧)证明 0x318 低2位
+      # **同为 2bit 枚举**: Active(值2) 时 bit0(LKAS_Prepared)=0, bit1(CruiseActivated)=1;
+      # Ready 仅 5 帧(bit0=1)。若只读 bit0 → lkas_prepared 恒 False → 横向永远无法激活。
+      # 与宋Plus 相同处理(合成 bit1:bit0)。对"bit0=1 且 bit1=0"的固件行为不变(值1→prepared)。
+      self.lkas_state = int(cp.vl["ACC_EPS_STATE"]["LKAS_Prepared"]) | (int(cp.vl["ACC_EPS_STATE"]["CruiseActivated"]) << 1)
+      self.lkas_prepared = self.lkas_state in (1, 2)  # Ready/Active 算 prepared; 0 NotReady/3 TemporaryFail 不算
 
     self.mpc_lkas_config = int(cp_cam.vl["ACC_MPC_STATE"]["LKAS_Config"])
     lkas_config_isAccOn = self.mpc_lkas_config != LKASConfig.DISABLE
