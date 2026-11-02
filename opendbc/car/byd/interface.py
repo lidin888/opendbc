@@ -111,7 +111,7 @@ class CarInterface(CarInterfaceBase):
     # leadDistanceBars=raw+1 ∈ [1,3], 0x32D 注入永远到不了 4BAR。
     # 覆盖为 4: personality raw∈[0,3] (cereal aggressive/standard/relaxed/moreRelaxed),
     # bars=1~4 与原车一一对应 (aggressive=1BAR最近 ~ moreRelaxed=4BAR最远) (2026-08-19)。
-    Params().put('LongitudinalPersonalityMax', "4")
+    Params().put('LongitudinalPersonalityMax', 4)
 
   @staticmethod
   def _get_params_sp(stock_cp: structs.CarParams, ret: structs.CarParamsSP, candidate, fingerprint: dict[int, dict[int, int]],
