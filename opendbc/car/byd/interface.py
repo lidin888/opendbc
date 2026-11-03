@@ -126,7 +126,12 @@ class CarInterface(CarInterfaceBase):
                      car_fw: list[structs.CarParams.CarFw], alpha_long: bool, is_release_sp: bool, docs: bool) -> structs.CarParamsSP:
     # BYD OP 纵向自带按钮拦截/注入(_get_button_injection), 与 SP 的 ICBM 自动按键冲突, 禁用。
     ret.intelligentCruiseButtonManagementAvailable = False
-    ret.pcmCruiseSpeed = False
+    # pcmCruiseSpeed 必须与 openpilotLongitudinalControl 对称 (2026-11-03 修):
+    # 之前写死 False → controlsd 的 longActive 变成 `enabled or not pcmCruiseSpeed` 恒 True
+    # → carcontroller 的按钮拦截分支命中(清零 SET/RES/Cancel) → 没开 OP 纵向时原车收不到
+    # 按钮, 仪表车速加不上去 (v9 无此字段, longActive 只看 openpilotLongitudinalControl)。
+    # 没开 OP 纵向时速度该由原车管 → True; 开 OP 纵向时 OP 自己管速度 → False。
+    ret.pcmCruiseSpeed = not stock_cp.openpilotLongitudinalControl
     return ret
 
   @staticmethod
