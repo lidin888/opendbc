@@ -83,8 +83,20 @@ class CarInterface(CarInterfaceBase):
     scale = self.STOCK_LAT_ACCEL_FACTOR / float(torque_params.latAccelFactor)
     return self._siglin_curve(lateral_acceleration, abc) * scale
 
+  @staticmethod
+  def _siglin_enabled() -> bool:
+    # 什么都不开 → 走 siglin 实车标定曲线 (最准);
+    # 开了自调校(LiveTorqueParamsToggle)或自定义调校(CustomTorqueParams) → 强制线性,
+    # 这样 factor/friction 旋钮就是线性模型的正常参数(自调校可学三值, 自定义值再覆盖),
+    # 不会出现"调 factor 却在缩放曲线"的语义混乱 (2026-11-03)。
+    p = Params()
+    return not (p.get_bool("LiveTorqueParamsToggle") or p.get_bool("CustomTorqueParams"))
+
+  def _use_siglin(self) -> bool:
+    return self.CP.carFingerprint in NON_LINEAR_TORQUE_PARAMS and self._siglin_enabled()
+
   def lateral_accel_from_torque(self) -> LateralAccelFromTorqueCallbackType:
-    if self.CP.carFingerprint in NON_LINEAR_TORQUE_PARAMS:
+    if self._use_siglin():
       # GM 同款查表反演 (2026-11-01 补: 此前缺反函数 → update_limits 的 PID 限幅
       # 按线性反算, 与 siglin 前向不一致)。曲线单调(a,b,c>0), np.interp 反查。
       abc = NON_LINEAR_TORQUE_PARAMS[self.CP.carFingerprint]
@@ -99,7 +111,7 @@ class CarInterface(CarInterfaceBase):
       return self.lateral_accel_from_torque_linear
 
   def torque_from_lateral_accel(self) -> TorqueFromLateralAccelCallbackType:
-    if self.CP.carFingerprint in NON_LINEAR_TORQUE_PARAMS:
+    if self._use_siglin():
       return self.torque_from_lateral_accel_siglin
     else:
       return self.torque_from_lateral_accel_linear
@@ -125,6 +137,11 @@ class CarInterface(CarInterfaceBase):
   def _get_params(ret: structs.CarParams, candidate, fingerprint, car_fw, alpha_long, is_release, docs) -> structs.CarParams:
     ret.brand = "byd"
     ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.byd)]
+
+    # 有 siglin 表且走曲线模式时, jerk 的扭矩空间换算是线性的, 与曲线不一致 → 自动关掉;
+    # 只有线性模式(开了自调校/自定义调校)下 jerk 才可用 (2026-11-03)。
+    if candidate in NON_LINEAR_TORQUE_PARAMS and CarInterface._siglin_enabled():
+      Params().put_bool("LateralJerkTorqueController", False)
 
     ret.dashcamOnly = False
     ret.radarUnavailable = candidate not in PT_RADAR_CAR
