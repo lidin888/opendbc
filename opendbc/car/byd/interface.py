@@ -6,6 +6,7 @@ import numpy as np
 from opendbc.car import get_safety_config, structs
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarInterfaceBase, TorqueFromLateralAccelCallbackType, LateralAccelFromTorqueCallbackType
+from opendbc.sunnypilot.car.interfaces import LatControlInputs, TorqueFromLateralAccelCallbackTypeTorqueSpace
 from opendbc.car.byd.values import (
   CAR,
   CanBus,
@@ -103,6 +104,21 @@ class CarInterface(CarInterfaceBase):
       return self.torque_from_lateral_accel_siglin
     else:
       return self.torque_from_lateral_accel_linear
+
+  def torque_from_lateral_accel_siglin_torque_space(self, latcontrol_inputs: LatControlInputs,
+                                                    torque_params: structs.CarParams.LateralTorqueTuning,
+                                                    gravity_adjusted: bool) -> float:
+    # jerk-aware / NNLC 走扭矩空间 PID, 换算必须与主控同一条 siglin 曲线 (GM 的做法)。
+    # 默认 SP 实现是线性 latAccel/latAccelFactor(1/2.2=0.455), 而 BYD 曲线零点斜率
+    # = 0.25*a*b+c ≈ 0.80 (宋21/22), 差 1.75x → ff/摩擦/P 全部只剩 ~57%, 只能靠积分补
+    # → 直线蛇形 (2026-11-03, v9 里 jerk 直接过 siglin 所以不画龙)。
+    return self.torque_from_lateral_accel_siglin(latcontrol_inputs.lateral_acceleration, torque_params)
+
+  def torque_from_lateral_accel_in_torque_space(self) -> TorqueFromLateralAccelCallbackTypeTorqueSpace:
+    # 与 torque_from_lateral_accel() 同一张表, 保证主控和 jerk 两条路永远一致
+    if self.CP.carFingerprint in NON_LINEAR_TORQUE_PARAMS:
+      return self.torque_from_lateral_accel_siglin_torque_space
+    return self.torque_from_lateral_accel_linear_in_torque_space
 
   @staticmethod
   def init(CP, CP_SP, can_recv, can_send):
