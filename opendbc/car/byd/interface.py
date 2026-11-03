@@ -77,20 +77,17 @@ class CarInterface(CarInterfaceBase):
     torque_params: structs.CarParams.LateralTorqueTuning,
   ) -> float:
     # friction 由 SP 的 latcontrol_torque ff 侧处理, 此处只回曲线 (否则双重摩擦)。
-    # scale 让 latAccelFactor 旋钮(手调/Self-Tune 自调谐)对 BYD 生效: factor 越大越轻
-    # (对齐线性语义 torque=lataccel/factor); 无人覆写时 factor=2.2 → scale=1 纯 ABC。
+    # 曲线固定为 v9 实车标定值, 不随 latAccelFactor 缩放 (2026-11-03 去掉 scale:
+    # 避免"调 factor 却在缩放曲线"的语义混乱; 摩擦仍由 torque_params.friction 单独调节)。
     abc = NON_LINEAR_TORQUE_PARAMS[self.CP.carFingerprint]
-    scale = self.STOCK_LAT_ACCEL_FACTOR / float(torque_params.latAccelFactor)
-    return self._siglin_curve(lateral_acceleration, abc) * scale
+    return self._siglin_curve(lateral_acceleration, abc)
 
   @staticmethod
   def _siglin_enabled() -> bool:
-    # 什么都不开 → 走 siglin 实车标定曲线 (最准);
-    # 开了自调校(LiveTorqueParamsToggle)或自定义调校(CustomTorqueParams) → 强制线性,
-    # 这样 factor/friction 旋钮就是线性模型的正常参数(自调校可学三值, 自定义值再覆盖),
-    # 不会出现"调 factor 却在缩放曲线"的语义混乱 (2026-11-03)。
-    p = Params()
-    return not (p.get_bool("LiveTorqueParamsToggle") or p.get_bool("CustomTorqueParams"))
+    # 只有自调校(LiveTorqueParamsToggle)切线性 —— 它学的是线性模型三值, 必须进线性;
+    # 自定义调校(CustomTorqueParams)不切: 曲线已固定(见 torque_from_lateral_accel_siglin),
+    # 它的 friction 滑条在 siglin 下照样生效, 只有 factor 滑条无效果 (2026-11-03)。
+    return not Params().get_bool("LiveTorqueParamsToggle")
 
   def _use_siglin(self) -> bool:
     return self.CP.carFingerprint in NON_LINEAR_TORQUE_PARAMS and self._siglin_enabled()
@@ -104,8 +101,7 @@ class CarInterface(CarInterfaceBase):
       curve_grid = [self._siglin_curve(x, abc) for x in lataccel_grid]
 
       def lateral_accel_from_torque_siglin(torque: float, torque_params: structs.CarParams.LateralTorqueTuning) -> float:
-        scale = self.STOCK_LAT_ACCEL_FACTOR / float(torque_params.latAccelFactor)
-        return float(np.interp(torque / scale, curve_grid, lataccel_grid))
+        return float(np.interp(torque, curve_grid, lataccel_grid))
       return lateral_accel_from_torque_siglin
     else:
       return self.lateral_accel_from_torque_linear
