@@ -186,6 +186,13 @@ SONG_PLUS_DREL_B6_SHRINK_X = (0.0, 5.0, 6.5, 12.0, 15.0, 44.0)
 SONG_PLUS_DREL_B6_SHRINK_Y = (0.0, 0.0, 1.0, 1.0, 0.0, 0.0)
 SONG_PLUS_VREL_WIN = 0.5       # 每目标距离差分窗口 (s); 0.1s 时相邻帧 vRel 跳变均值 0.231m/s,
                                # 0.3s 降到 0.095, 0.5s 更稳 (回放 seg40 实测 + 2026-08-15 内证法回归验证)
+SONG_PLUS_VREL_WIN_YOUNG = 0.25  # 【2026-11-04 揭示期】出生 <1s track 的短窗差分窗 (s)。
+                               #   静止障碍被前车让开揭示时, 0.5s 窗+下降沿 tau 使 vRel 收敛 ~0.9s,
+                               #   规划器误判"前车在走"→ 刹车不足 (.comma(14) 20:59:47 A 揭示 → AEB)。
+                               #   0.25s 窗在同一数据上 47.5s 即报 -8~-10 (0.5s 窗同刻仅 -6.2)。
+SONG_PLUS_VREL_YOUNG_TAU = 0.15  # 揭示期低通 tau 上限 (s): 建立期需要双向快跟, 常规下降沿
+                               #   慢平滑在揭示场景是纯延迟; 毒帧防线不靠 tau (D2/M7/b7/输出限变)。
+SONG_PLUS_VREL_YOUNG_AGE = 1.0   # 揭示期时长 (s): 覆盖雷达距离建立 (~0.5s) + 收敛余量
 SONG_PLUS_VREL_WIN_D2_MAX = 0.8   # 【2026-11-04 差分窗质量门】窗内相邻距离增量的二阶跳变上限 (m):
                                   #   窗内单次跳变 (3m 清窗门以下) 会毒化整窗差分 → 一帧假 vRel 直发
                                   #   → plan 满刹 (2026-11-03 .comma(12) t=1961 实测 vRel=-11.95 毒帧)。
@@ -779,6 +786,7 @@ class RadarInterface(RadarInterfaceBase):
         self.last_valid_long: Dict[int, float] = {}
         self.vrel_filters: Dict[int, LowPassFilter] = {}
         self._song_plus_vrel_out: Dict[int, float] = {}   # 输出 vRel 帧间限变锚点 (2026-11-04)
+        self._song_plus_birth: Dict[int, float] = {}      # track 创建时刻 (2026-11-04 揭示期判龄)
 
         # ---------- 统计 ----------
         self.updated_messages = set()
@@ -1432,6 +1440,7 @@ class RadarInterface(RadarInterfaceBase):
                 track_id = self._song_plus_next_id
                 self._song_plus_next_id += 1
                 assigned.add(track_id)
+                self._song_plus_birth[track_id] = now
             if slot not in slot_used:
                 slot_used.add(slot)
 
@@ -1460,9 +1469,14 @@ class RadarInterface(RadarInterfaceBase):
             # 前车缓慢起步(0.2~1 m/s)也能测到; 静止时 Δd=0 不触发, 纯量化抖动(1-2 LSB)不触发
             # 2026-08-26 保留窗扩到 2s 后, 短窗点改取"≥0.45s 前的最新样本"(窗≈0.5s),
             # 不再用 hist[0] (否则窗会被拉长到 2s)。
+            # 【2026-11-04 揭示期】出生 <SONG_PLUS_VREL_YOUNG_AGE 的 track 走快收敛:
+            #   短窗差分 0.25s 窗 + 低通 tau 封顶 (见常量注释; 静止障碍被前车让开揭示后
+            #   vRel 收敛 0.9s → ~0.5s)。防毒不靠窗/tau: D2 质量门/M7/b7/输出限变全保留。
+            _young = now - self._song_plus_birth.get(track_id, -1e9) < SONG_PLUS_VREL_YOUNG_AGE
             short_pt = None
+            _win_s = SONG_PLUS_VREL_WIN_YOUNG if _young else SONG_PLUS_VREL_WIN
             for pt_t, pt_d, pt_y in reversed(hist):
-                if now - pt_t >= SONG_PLUS_VREL_WIN - 0.05:
+                if now - pt_t >= _win_s - 0.05:
                     short_pt = (pt_t, pt_d, pt_y)
                     break
             if short_pt is not None:
@@ -1601,12 +1615,14 @@ class RadarInterface(RadarInterfaceBase):
                     tau *= 1.6        # 降级帧, 多平滑
                 elif (q4 & 0x0F) >= 11:
                     tau *= 0.7        # 高质量帧, 快速跟随
+            if _young:
+                tau = min(tau, SONG_PLUS_VREL_YOUNG_TAU)   # 揭示期双向快跟 (见常量注释)
             if vrel > v_filter.x:
                 tau *= SONG_PLUS_VREL_RISE_GAIN
             vrel = v_filter.update(vrel, max(min(now - self._song_plus_last_t.get(track_id, now), 0.2), 0.01), tau)
             self._song_plus_last_t[track_id] = now
             # 【2026-11-04 输出 vRel 帧间限变】毒帧兜底 (常量注释见 SONG_PLUS_VREL_OUT_SLEW):
-            #   锚点=本 track 上次发布值, 新 track 锚=0 (首帧 ≤±1.25, 真值持续 2~3 帧追上)。
+            #   锚点=本 track 上次发布值, 新 track 锚=0 (揭示期收敛由 0.25s 短窗+tau 封顶负责)。
             #   只限发布值 (聚类中心/pt 同此值), 低通内部状态不回写 → 真值恢复时滤波连续。
             _v_out_prev = self._song_plus_vrel_out.get(track_id, 0.0)
             vrel = float(max(min(vrel, _v_out_prev + SONG_PLUS_VREL_OUT_SLEW),
@@ -1737,6 +1753,7 @@ class RadarInterface(RadarInterfaceBase):
                 self._song_plus_vrel_out.pop(k, None)   # 输出限变锚点同步清理
                 self._pts_not_seen.pop(k, None)
                 self._song_plus_native_id.pop(k, None)   # 同步清理原生航迹ID缓存, 防无限增长
+                self._song_plus_birth.pop(k, None)       # 揭示期判龄缓存, 同步清理
 
         # 更新帧间聚类中心 (供下一帧关联)
         self._song_plus_tracks = new_tracks
@@ -1759,6 +1776,7 @@ class RadarInterface(RadarInterfaceBase):
                     #   MAX_OBJECTS 截断路径已加, 但 stale 清理路径漏了 → 长时间行驶
                     #   trackId 自增致 _song_plus_native_id 无界增长 (内存泄漏)。
                     self._song_plus_native_id.pop(k, None)
+                    self._song_plus_birth.pop(k, None)   # 揭示期判龄缓存, 同步清理 (M3 同款)
 
         self.pts.update(self._pts_cache)
 
