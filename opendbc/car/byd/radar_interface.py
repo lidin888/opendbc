@@ -186,6 +186,16 @@ SONG_PLUS_DREL_B6_SHRINK_X = (0.0, 5.0, 6.5, 12.0, 15.0, 44.0)
 SONG_PLUS_DREL_B6_SHRINK_Y = (0.0, 0.0, 1.0, 1.0, 0.0, 0.0)
 SONG_PLUS_VREL_WIN = 0.5       # 每目标距离差分窗口 (s); 0.1s 时相邻帧 vRel 跳变均值 0.231m/s,
                                # 0.3s 降到 0.095, 0.5s 更稳 (回放 seg40 实测 + 2026-08-15 内证法回归验证)
+SONG_PLUS_VREL_WIN_D2_MAX = 0.8   # 【2026-11-04 差分窗质量门】窗内相邻距离增量的二阶跳变上限 (m):
+                                  #   窗内单次跳变 (3m 清窗门以下) 会毒化整窗差分 → 一帧假 vRel 直发
+                                  #   → plan 满刹 (2026-11-03 .comma(12) t=1961 实测 vRel=-11.95 毒帧)。
+                                  #   真实运动的二阶差分 = |a|·dt² ≈ 0.01~0.15m, 0.8m 只拦跳变不拦真值;
+                                  #   超门 = 差分"无结论"(vrel=0, _v_diff_ok=False) → b6 可用则接管。
+SONG_PLUS_VREL_OUT_SLEW = 1.25    # 【2026-11-04 输出 vRel 帧间限变】发布值 vs 本 track 上次发布值的最大
+                                  #   变化 (m/s/帧)。正常区 (d≤50m 且 tid 不变) 实测 |ΔvRel|/帧 p99=0.72
+                                  #   → 1.25 零触碰; 毒帧被压到 1.25/帧, 任意毒源兜底。
+                                  #   新 track 锚=0 → 首帧 ≤±1.25, 真值持续 2~3 帧追上。
+                                  #   只限发布值 (pt/聚类中心), 低通内部状态不回写。
 # ---- b6 精细接近率落地参数 (2026-09-20; 换算函数与 selfdrive/debug/byd_radar_speed_probe.py 同源) ----
 # ⚠️ 命名消歧: 本块的"b6"= 速度槽 0x3C8+g 第7字节(接近率编码);
 #    上方 SONG_PLUS_DREL_B6_SHRINK 的"b6"= 目标 sub0 帧第7字节(距离量程档) —— 两个完全不同的量。
@@ -768,6 +778,7 @@ class RadarInterface(RadarInterfaceBase):
         self._dist_bufs: Dict[int, deque] = {}      # per-target median buffer for preprocess
         self.last_valid_long: Dict[int, float] = {}
         self.vrel_filters: Dict[int, LowPassFilter] = {}
+        self._song_plus_vrel_out: Dict[int, float] = {}   # 输出 vRel 帧间限变锚点 (2026-11-04)
 
         # ---------- 统计 ----------
         self.updated_messages = set()
@@ -1463,10 +1474,24 @@ class RadarInterface(RadarInterfaceBase):
                 if abs(yrel - y_old) > SONG_PLUS_VREL_MAX_DY:
                     vrel = 0.0
                 else:
-                    raw_vrel = (dist - d_old) / dt
-                    if abs(dist - d_old) >= 0.1875:
-                        vrel = max(min(raw_vrel, 30.0), -30.0)
-                        _v_diff_ok = True
+                    # 【2026-11-04 差分窗质量门】窗内相邻距离增量的二阶跳变超 0.8m = 单次跳变
+                    #   污染 (3m 清窗门以下的跳变逃过 hist.clear), 整窗差分不可信 → 判"无结论"
+                    #   (vrel=0, _v_diff_ok 保持 False) → b6 可用则接管, 否则保持 0 走低通。
+                    _win_d = [p_d for p_t, p_d, _p_y in hist if p_t >= t_old]
+                    _d_jump_ok = True
+                    if len(_win_d) >= 3:
+                        _dd_list = [_win_d[i + 1] - _win_d[i] for i in range(len(_win_d) - 1)]
+                        _d2_max = max(abs(_dd_list[i + 1] - _dd_list[i]) for i in range(len(_dd_list) - 1))
+                        if _d2_max > SONG_PLUS_VREL_WIN_D2_MAX:
+                            _d_jump_ok = False
+                    if not _d_jump_ok:
+                        # 无结论: 不用短窗差分, 不 continue —— 长窗(下方)与 b6 融合仍有机会接管
+                        vrel = 0.0
+                    else:
+                        raw_vrel = (dist - d_old) / dt
+                        if abs(dist - d_old) >= 0.1875:
+                            vrel = max(min(raw_vrel, 30.0), -30.0)
+                            _v_diff_ok = True
             # 2026-08-26 长窗差分主导 (e266140d seg8 06:40 幻影刹车): 大横向偏移(|yRel|>2m,
             # 弯道中本车道前方的几何投影)时, 0.5s 帧级短窗差分被斜距几何污染 → vRel 正负抖动
             # → vLead 振荡 (案例 12~17m/s 来回摆) → MPC 追"幻影减速"刹过头 (24→10.4m/s, 
@@ -1580,6 +1605,13 @@ class RadarInterface(RadarInterfaceBase):
                 tau *= SONG_PLUS_VREL_RISE_GAIN
             vrel = v_filter.update(vrel, max(min(now - self._song_plus_last_t.get(track_id, now), 0.2), 0.01), tau)
             self._song_plus_last_t[track_id] = now
+            # 【2026-11-04 输出 vRel 帧间限变】毒帧兜底 (常量注释见 SONG_PLUS_VREL_OUT_SLEW):
+            #   锚点=本 track 上次发布值, 新 track 锚=0 (首帧 ≤±1.25, 真值持续 2~3 帧追上)。
+            #   只限发布值 (聚类中心/pt 同此值), 低通内部状态不回写 → 真值恢复时滤波连续。
+            _v_out_prev = self._song_plus_vrel_out.get(track_id, 0.0)
+            vrel = float(max(min(vrel, _v_out_prev + SONG_PLUS_VREL_OUT_SLEW),
+                             _v_out_prev - SONG_PLUS_VREL_OUT_SLEW))
+            self._song_plus_vrel_out[track_id] = vrel
             # 高速静态物过滤 (借鉴 MR76 STATIONARY_OBJ_VREL, 2026-08-20):
             # 本车高速时, 车道外(|yrel|>2.5m)且差分 vRel 判为静止(vLead≈0) 的目标 = 护栏/路牌/隔离带。
             # 剔除: 不写聚类中心(不再参与关联)/不写 pts(不输出绿框), 防车道边静态物周期性抢 trackId。
@@ -1674,6 +1706,7 @@ class RadarInterface(RadarInterfaceBase):
                     # 这里直接改 self.pts[tid] 让衰减后的 vRel 生效。
                     if tid in self.pts:
                         self.pts[tid].vRel = vrel_decay
+                        self._song_plus_vrel_out[tid] = vrel_decay  # 限变锚点跟随衰减, 防重逢首帧从旧值放行
                         # vLead/aLead: 现代 RadarPoint 只有 dRel/yRel/vRel/trackId,
                         # 这两个字段不存在 (2026-11-01 审核, 写入即 AttributeError 崩 card)。
                         # vLead 可由 vRel+vEgo 在消费端推出; aLead 已在 radard 侧由差分计算。
@@ -1701,6 +1734,7 @@ class RadarInterface(RadarInterfaceBase):
                 self._song_plus_hist.pop(k, None)
                 self._song_plus_last_t.pop(k, None)
                 self.vrel_filters.pop(k, None)
+                self._song_plus_vrel_out.pop(k, None)   # 输出限变锚点同步清理
                 self._pts_not_seen.pop(k, None)
                 self._song_plus_native_id.pop(k, None)   # 同步清理原生航迹ID缓存, 防无限增长
 
@@ -1719,6 +1753,7 @@ class RadarInterface(RadarInterfaceBase):
                     self._song_plus_hist.pop(k, None)
                     self._song_plus_last_t.pop(k, None)
                     self.vrel_filters.pop(k, None)
+                    self._song_plus_vrel_out.pop(k, None)  # 输出限变锚点同步清理
                     self._pts_not_seen.pop(k, None)  # 删 pts 时同步删键, 防 trackId 自增致字典无限增长
                     # 【2026-10-22 审计修复 M3】原生航迹 ID 缓存同步清理。
                     #   MAX_OBJECTS 截断路径已加, 但 stale 清理路径漏了 → 长时间行驶

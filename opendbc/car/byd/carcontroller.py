@@ -394,6 +394,8 @@ class CarController(CarControllerBase):
 
       # OP纵向退出沿: longActive 1→0 时补发 Act=0 ACC_CMD, 让 ESC 干净退出 ACC 状态,
       # 否则 ACC_CMD 流中断 → ESC 报 AccState=7(ACC_ERROR) → 原车报错/误判转向故障。
+      # 命令限斜率用: longActive 上升沿当帧锚点同步到新请求 (急刹需求即时生效, 不从旧值慢爬)。
+      long_active_rising = CC.longActive and not self._long_active_prev
       if CC.longActive:
         self._long_active_prev = True
       elif self._long_active_prev:
@@ -444,12 +446,25 @@ class CarController(CarControllerBase):
           self.sss = CS.out.standstill if accel_to_send < -0.1 else 0
 
         if long_active:
-          # 2026-10-31: sptn 无 CC.actuators.jerk, 用请求加速度对时间的差分估算意图 jerk
-          # (语义对拍 v9-byd 的 MPC.jerk: 泄压上限 key, 见 bydcan.acc_cmd 注释)。
+          dt = 0.0
           if self._last_accel_t_ns is not None and now_nanos > self._last_accel_t_ns:
             dt = (now_nanos - self._last_accel_t_ns) * 1e-9
-            if dt > 0.0:
-              self._jerk_est = 0.7 * self._jerk_est + 0.3 * ((accel_to_send - self.apply_accel_last) / dt)
+
+          # 2026-11-04 命令侧限斜率 (values.ACCEL_SLEW_RATE, 补 v9 planner 的 ACCEL_SLEW_RATE 盲区):
+          #   planner→longcontrol→CAN 原是 1:1 阶跃 (2026-11-03 .comma(12) 实测一帧 0→-3.5),
+          #   阶跃副作用 (ESC 积分 windup / 释放过冲 / 下方 jerk_est 污染) 全数进车。
+          #   锚点=上次实际下发值 (apply_accel_last); 上升沿/首帧锚点同步到本帧请求 = 零延迟;
+          #   退出补帧 (long_active_exit) 不走本路径; rfss/sss/stopping 判定在上方已用意图值。
+          if (not long_active_rising) and dt > 0.0 and CarControllerParams.ACCEL_SLEW_RATE > 0.0:
+            max_delta = CarControllerParams.ACCEL_SLEW_RATE * 20.0 * dt  # 0.3/帧@20Hz → 6 m/s³
+            accel_to_send = float(np.clip(accel_to_send,
+                                          self.apply_accel_last - max_delta,
+                                          self.apply_accel_last + max_delta))
+
+          # 2026-10-31: sptn 无 CC.actuators.jerk, 用请求加速度对时间的差分估算意图 jerk
+          # (语义对拍 v9-byd 的 MPC.jerk: 泄压上限 key, 见 bydcan.acc_cmd 注释)。
+          if dt > 0.0:
+            self._jerk_est = 0.7 * self._jerk_est + 0.3 * ((accel_to_send - self.apply_accel_last) / dt)
           self._last_accel_t_ns = now_nanos
           can_sends.append(bydcan.acc_cmd(self.packer, self.CP, CS.cam_acc, CS.mrr_leading_dist,
                                           accel_to_send, self.rfss, self.sss, True,

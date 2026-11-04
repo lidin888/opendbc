@@ -38,6 +38,14 @@ class CarControllerParams:
   ACCEL_MAX = 2.0
   ACCEL_MIN = -3.5
 
+  # 命令侧限斜率 (2026-11-04, 补 v9 longitudinal_planner 的 ACCEL_SLEW_RATE 盲区):
+  #   planner→longcontrol→CAN 原是 1:1 阶跃 (实测一帧 0→-3.5 = 70 m/s³), ESC 只能按
+  #   JerkLower/Upper 斜坡执行, 阶跃副作用 (积分 windup/释放过冲/jerk_est 污染) 全数进车。
+  #   0.3 m/s²/帧@20Hz = 6 m/s³, 与 v9-byd longitudinal_planner.ACCEL_SLEW_RATE 同值同语义
+  #   ("治突突同时不滞后急刹")。落在 carcontroller 下发前, 仅 BYD 生效。
+  #   回退: 置 0 即回到旧行为 (一帧阶跃)。
+  ACCEL_SLEW_RATE = 0.3   # m/s² per 20Hz frame = 6 m/s³
+
   K_DASHSPEED = 0.0719088 #convert pulse to kph
 
   USE_STEERING_SPEED_LIMITER = False
