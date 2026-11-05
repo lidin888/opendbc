@@ -206,6 +206,14 @@ SONG_PLUS_VREL_LWIN_FALLBACK = False
 SONG_PLUS_TAU_QF = {0: 1.3, 1: 1.35, 2: 1.0, 3: 0.7}   # Quality 因子
 SONG_PLUS_TAU_DF = {0: 0.85, 1: 1.15, 2: 1.5, 3: 1.9}  # Deg 因子
 SONG_PLUS_VREL_YOUNG_AGE = 1.0   # 揭示期时长 (s): 覆盖雷达距离建立 (~0.5s) + 收敛余量
+# 【2026-11-05 远距长窗】b6 融合只覆盖到 75m, 75~120m 完全靠距离差分; 该带距离抖动
+#   ±1.5m/0.5s → vRel 幻影接近 (实测 75-100m 短窗报 -8.6/-10.4 而真值 -3.4 → 莫名减速
+#   再恢复, .comma(15) 20--8 / 1f--1 实测 8 次)。远距改用 1.5s 长窗把抖动积分掉:
+#   A/B (4 段, 75-100m n=358): 幻影接近次数 8 → 0, median|e| 0.514→0.805 (滞后代价);
+#   50-75m 保持短窗 (b6 已覆盖, 短窗 median|e| 0.150 明显更优); 100-130m 样本太少不外推。
+#   远距反应时间充裕 (80m 处 TTC >8s), 用滞后换稳定性是净收益。
+SONG_PLUS_VREL_WIN_FAR = 1.5      # 远距 (>75m) 差分窗 (s)
+SONG_PLUS_VREL_WIN_FAR_DREL = 75.0  # 远距长窗生效距离 (与 b6 融合上限一致)
 SONG_PLUS_VREL_WIN_D2_MAX = 0.8   # 【2026-11-04 差分窗质量门】窗内相邻距离增量的二阶跳变上限 (m):
                                   #   窗内单次跳变 (3m 清窗门以下) 会毒化整窗差分 → 一帧假 vRel 直发
                                   #   → plan 满刹 (2026-11-03 .comma(12) t=1961 实测 vRel=-11.95 毒帧)。
@@ -1545,7 +1553,12 @@ class RadarInterface(RadarInterfaceBase):
             #   vRel 收敛 0.9s → ~0.5s)。防毒不靠窗/tau: D2 质量门/M7/b7/输出限变全保留。
             _young = now - self._song_plus_birth.get(track_id, -1e9) < SONG_PLUS_VREL_YOUNG_AGE
             short_pt = None
-            _win_s = SONG_PLUS_VREL_WIN_YOUNG if _young else SONG_PLUS_VREL_WIN
+            if _young:
+                _win_s = SONG_PLUS_VREL_WIN_YOUNG
+            elif dist >= SONG_PLUS_VREL_WIN_FAR_DREL:
+                _win_s = SONG_PLUS_VREL_WIN_FAR     # 远距长窗 (见常量注释)
+            else:
+                _win_s = SONG_PLUS_VREL_WIN
             for pt_t, pt_d, pt_y in reversed(hist):
                 if now - pt_t >= _win_s - 0.05:
                     short_pt = (pt_t, pt_d, pt_y)
@@ -1567,7 +1580,9 @@ class RadarInterface(RadarInterfaceBase):
                     if len(_win_d) >= 3:
                         _dd_list = [_win_d[i + 1] - _win_d[i] for i in range(len(_win_d) - 1)]
                         _d2_max = max(abs(_dd_list[i + 1] - _dd_list[i]) for i in range(len(_dd_list) - 1))
-                        if _d2_max > SONG_PLUS_VREL_WIN_D2_MAX:
+                        # 远距长窗样本更多 → max 更容易触门, 阈值按窗长放宽 (1.5s→×1.6)
+                        _d2_limit = SONG_PLUS_VREL_WIN_D2_MAX * (1.6 if _win_s > SONG_PLUS_VREL_WIN else 1.0)
+                        if _d2_max > _d2_limit:
                             _d_jump_ok = False
                     if not _d_jump_ok:
                         # 无结论: 不用短窗差分, 不 continue —— 长窗(下方)与 b6 融合仍有机会接管
