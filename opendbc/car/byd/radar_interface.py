@@ -192,6 +192,19 @@ SONG_PLUS_VREL_WIN_YOUNG = 0.25  # 【2026-11-04 揭示期】出生 <1s track �
                                #   0.25s 窗在同一数据上 47.5s 即报 -8~-10 (0.5s 窗同刻仅 -6.2)。
 SONG_PLUS_VREL_YOUNG_TAU = 0.15  # 揭示期低通 tau 上限 (s): 建立期需要双向快跟, 常规下降沿
                                #   慢平滑在揭示场景是纯延迟; 毒帧防线不靠 tau (D2/M7/b7/输出限变)。
+# 【2026-11-05 Quality/Deg tau 因子】184 段 OP纵向日志离线 A/B (对称窗参考, 只改 tau):
+#   全体 median|vRel-ref| 0.544→0.489 (-10.2%), 稳态噪声 std -2.7%, 制动滞后 -3.0% —— 全指标改善。
+#   Quality=(sub1.b4>>3)&3 与 Deg=(sub2.b2>>3)&3 是两条独立噪声轴 (与 bit5 轴近似正交):
+#     Quality 抖动 0.52/0.56/0.40/0.27m, Deg 抖动 0.30/0.45/0.62/0.79m (95k 样本)。
+#   因子按实测抖动比定标并归一: Q=3 帧 ×0.7 快跟 (占 44% 帧) 收益 > Q<=1 帧 ×1.3 平滑代价。
+# 【2026-11-05 暂缓】弯道长窗兜底旗标 (默认关): 强弯 (1a--6) 上原始距离 ±1.5m@30Hz 抖动,
+#   短窗差分 D2 全程无结论, b6 又与长窗趋势反向 (b6=+2.2 vs 趋势 -3.6)。已实现
+#   "hist 长窗 (1.4s) 差分交叉验证 b6 + 失配>3 弃 b6 用长窗" 的兜底, 但回放实测
+#   1a--6 上 vRel 仍为 0 (兜底未触发, 触发条件待诊断, 该行为基线亦同、非本次引入)。
+#   诊断清楚前不启用; 启用前需验证 16-4 直道场景无回归。
+SONG_PLUS_VREL_LWIN_FALLBACK = False
+SONG_PLUS_TAU_QF = {0: 1.3, 1: 1.35, 2: 1.0, 3: 0.7}   # Quality 因子
+SONG_PLUS_TAU_DF = {0: 0.85, 1: 1.15, 2: 1.5, 3: 1.9}  # Deg 因子
 SONG_PLUS_VREL_YOUNG_AGE = 1.0   # 揭示期时长 (s): 覆盖雷达距离建立 (~0.5s) + 收敛余量
 SONG_PLUS_VREL_WIN_D2_MAX = 0.8   # 【2026-11-04 差分窗质量门】窗内相邻距离增量的二阶跳变上限 (m):
                                   #   窗内单次跳变 (3m 清窗门以下) 会毒化整窗差分 → 一帧假 vRel 直发
@@ -221,7 +234,14 @@ SONG_PLUS_VREL_OUT_SLEW = 1.25    # 【2026-11-04 输出 vRel 帧间限变】发
 #      SONG_PLUS_VREL_B6_BIAS(0.7, 仅 v<-3) 恰好补偿 → 加偏置后强接近段 bias +0.055
 #   效果 (vs 低噪声滑窗真值, 5-50m): 本夜 C45→C36 MAE 1.006→0.856 (-15%),
 #      外部 0.816→0.741 (-9%); 旧公式(k7,C36) 两份数据 bias 均 -0.53~-0.58 m/s
-SONG_PLUS_VREL_B6_MAX_DREL = 50.0   # <50m 用 b6; >50m 差分地盘 (b6 远距量化粗+稀释, 勿控车)
+SONG_PLUS_VREL_B6_MAX_DREL = 75.0   # <75m 用 b6; >75m 差分地盘。
+#   【2026-11-05 A/B 扩展 50→75】71 段 13374 帧 (50-75m, 对称窗参考, 忠实复刻缓存语义:
+#   过滤填充帧+当前距离解码+1s 新鲜度): median 0.776→0.676 (-12.9%), P90 2.645→2.289 (-13.5%),
+#   P95 3.625→3.192 (-11.9%) —— 中位与尾部同时改善 (b6 误差与差分误差部分独立)。
+#   75-90m 不扩展: b6 误差劣化 (填充帧占比升高)。
+#   ⚠️ 方法论教训: 第一次 A/B 忘了过滤填充帧 (b2/b3=127.875/tid15), 得出"远距 b6 不可用"的
+#   错误结论 —— 实际缓存写入时已过滤, 远距真数据帧是稀疏但可用的。测变换特征先剔常量/填充。
+#   另: 50m 外 b6 分布 p50=249~253 的"编码切换"假象 = 未过滤的填充帧, 非新编码。
 SONG_PLUS_VREL_B6_FRESH_S = 1.0     # 速度帧新鲜度: 最近 real 帧 ≤1s 才用 (与 probe 工具一致)
 SONG_PLUS_VREL_B6_BIAS_V = -3.0     # 强接近阈值 (保守偏置方向=更接近, 安全)
 SONG_PLUS_VREL_B6_BIAS = 0.7        # 强接近保守偏置 (m/s; 补偿 b6 大值压缩: 裸 bias +0.58 → 加后 -0.01)
@@ -258,7 +278,7 @@ SONG_PLUS_VREL_B6_FUSE_BETA = 0.25
 SONG_PLUS_VREL_B6_FUSE_BETA_NEW = 0.08
 SONG_PLUS_VREL_B6_FUSE_B7_MAX = 8      # b7 < 此值 = 新目标 → 用 BETA_NEW
 SONG_PLUS_VREL_B6_K = 6.5           # 零点偏移 (b6=-6.5 ↔ vRel≈0; 半档结构)
-SONG_PLUS_VREL_B6_C6 = ((50.0, 36.0), (1e9, 88.0))   # <50m 统一 36 (>50m 不用 b6)
+SONG_PLUS_VREL_B6_C6 = ((75.0, 36.0), (1e9, 88.0))   # <75m 统一 36 (A/B 实测 50-75m C=36 有效, 见 MAX_DREL 注释)
 
 
 def _song_plus_c6(d: float) -> float:
@@ -480,6 +500,12 @@ SONG_PLUS_NOT_SEEN_INIT = 20    # stale 清理: 目标从聚类中心移除后�
                                 # 唐DM NOT_SEEN_INIT=99+隔帧递减需 ~4.6s, 宋Plus 14.5Hz 轮询
                                 # 下目标消失信号足够快, 4.6s 会导致 pts 大量残留累积(实测32),
                                 # 残留旧绿框位置过期 → 污染视觉配对(y_sane 17% vs 解码层80%)
+# 【2026-11-05 状态码 130 提前收尾, 对标丰田 radar_interface】
+#   丰田: NEW_TRACK / LONG_DIST>=255 时立即删点; 我们因 14.5Hz 轮询分片必须保留旧中心,
+#   但 130 = "即将消失" (消失前 2 帧/0.15s 实证预告) —— 已宣告消失的目标没有继续保留 2s 的
+#   必要, 保留期间 pts 会带衰减 vRel 持续发布 (vLead=vEgo 的幽灵前车 → 误跟车/无谓减速)。
+#   只在 130 帧后缩短保留; 目标重新出现 (128/129) 会清掉标记回正常 2s。
+SONG_PLUS_EXPIRING_HOLD = 0.35  # 状态码 130 目标: 失去轮询后的保留时长 (s)。覆盖 ~5 个轮询周期。
 
 # ---------- 宋Plus vRel: 两点差分+低通 (2026-08-17 CV-KF 实验后回退) ----------
 # 该雷达不广播每目标 vRel (2026-08-17 全总线+mux扫描证零), 只能由距离观测估计。
@@ -787,6 +813,7 @@ class RadarInterface(RadarInterfaceBase):
         self.vrel_filters: Dict[int, LowPassFilter] = {}
         self._song_plus_vrel_out: Dict[int, float] = {}   # 输出 vRel 帧间限变锚点 (2026-11-04)
         self._song_plus_birth: Dict[int, float] = {}      # track 创建时刻 (2026-11-04 揭示期判龄)
+        self._song_plus_expiring: Dict[int, float] = {}   # track_id -> 最后见到状态码 130 的时刻
 
         # ---------- 统计 ----------
         self.updated_messages = set()
@@ -1275,9 +1302,21 @@ class RadarInterface(RadarInterfaceBase):
                     _b6s = _b6r - 256 if _b6r >= 128 else _b6r
                     _sd = 0.0625 * (((d[3] & 0x0F) << 8) | d[2])
                     _is_fill = abs(_sd - 127.875) < 0.01 and (d[3] >> 4) == 15
-                    if (not _is_fill) and d[2] != 0 and (d[3] >> 4) != 15 and -50 <= _b6s <= 50:
+                    # 【2026-11-05 填充簇拒收】远距速度帧大量携带 b6=0xF9~0xFD (249~253,
+                    #   填充模板残留), 距离字段却是真实距离 → 上面 _is_fill 拦不住,
+                    #   有符号过滤也拦不住 (signed -7~-3 在 [-50,50] 内)。解码后 vRel 乱飞:
+                    #   249→+0.7m/s@50m (虚报远离→欠刹), 253→-4.8m/s@50m (虚报接近→过刹)。
+                    #   1a--6 实测两个方向都被毒化 (该时刻真差分≈-1.5, 实车 vRel=-4.5 过刹,
+                    #   基线回放 vRel=+0.7 欠刹)。拒绝 raw>=249 仅丢失 |v|<1.4·d/36 的
+                    #   "远离"方向 b6 数据 (非危险方向, 差分可覆盖)。
+                    if (not _is_fill) and d[2] != 0 and (d[3] >> 4) != 15 and -50 <= _b6s <= 50 and _b6r < 249:
                         # b7 bit0 = 质量位 (10-03 实测: bit0=1 时 b6 误差翻倍 0.553→1.071 m/s,
                         # 占 real 帧 8.4%; bit1~7 恒 0) → 缓存里带质量标记, 使用端退差分。
+                        # 【2026-11-05 补测】b7 是整帧测量质量位: 与距离抖动相关 +0.40 (四分带
+                        #   0.44/0.41/0.39/0.33 一致), 不止 b6。但它**不进 tau** —— 离线 A/B
+                        #   (249 段/184 有效, 逐变体只改 tau): qd 基线 median 0.4885, 加 b7×1.2/1.4/1.6
+                        #   后 0.4940/0.4984/0.5020, P90/稳态/制动 bias 同向劣化 —— 滞后代价 > 降噪收益,
+                        #   与 sub3.b4.bit7 同结论。b7 的正确用法就是现在这个: 只用来退 b6 差分。
                         self._song_plus_b6_cache[a - 0x3C8] = (_b6s, now, bool(d[7] & 1))
                 # sub2 帧 (0x382+4g) 的 b2 粗接近率: **10-03 已证伪, 缓存不再写入**
                 # (b2 = 雷达 per-slot tracker 状态量, 换目标后串位; 见 SONG_PLUS_VREL_B2_* 注释区)。
@@ -1406,6 +1445,7 @@ class RadarInterface(RadarInterfaceBase):
         assigned = set()
         slot_used = set()  # FIX1: 本帧已被匹配的 slot (同 slot 优先只作用于首个候选)
         _static_dropped = set()  # 【M4】本帧被高速静态物过滤剔除的 track, 保留循环需跳过
+        _replaced = set()  # 【2026-11-05】原生航迹 ID 变化 = 槽内换目标, 旧 track 本帧末丢弃
 
         for dist, yrel, state, slot, dist_raw, yv_rel, native_id, q4 in points:
             best_track = None
@@ -1433,7 +1473,27 @@ class RadarInterface(RadarInterfaceBase):
                 if score < best_score:
                     best_score = score
                     best_track = tid
-            if best_track is not None and best_score < 2.0:
+            # 【2026-11-05 原生航迹 ID = 目标身份, 对标丰田 NEW_TRACK】
+            #   丰田 radar_interface: NEW_TRACK 置位 → 分配新 trackId (不继承旧历史)。
+            #   我们解出的 sub3.b7&0x3F 就是雷达自己的航迹 ID (全量 701 段: 同目标不变率
+            #   99.47%)。若槽内换了目标, 仅"本帧禁用 b6"不够 —— hist/vRel 低通/限变锚点
+            #   仍带着前任目标的距离序列 (距离相近时不触发 >3m 清空) → vRel 被污染 0.2~0.5s。
+            #   这里按丰田语义: ID 变化 = 新目标, 分配新 trackId 并丢弃旧 track (不做跨目标继承)。
+            _matched = best_track is not None and best_score < 2.0
+            _prev_nid_of_best = self._song_plus_native_id.get(best_track) if _matched else None
+            # 【2026-11-05 弯道修正】原生 ID 在弯道上会抖动 (1a--6 实测: 同一目标 d=53.9
+            #   恒定, nid 97→98→94 反复换, 0.5s 内 13 次) —— 雷达横向重聚类时重新编号,
+            #   不是换目标。仅"ID 变化"就清历史会让差分持续无结论 → vRel=0 → 弯道漏刹。
+            #   修正: ID 变化 且 距离也跳变 (>1.5m) 才判换目标重置; 距离连续 = 同一目标
+            #   被重新编号, 保留差分历史 (仅更新存储的 nid)。
+            _hist_bt = self._song_plus_hist.get(best_track) if _matched else None
+            _nid_d_jump = True
+            if _hist_bt:
+                _nid_d_jump = abs(dist - _hist_bt[-1][1]) > 1.5
+            _native_replaced = (_matched and native_id >= 0
+                                and _prev_nid_of_best is not None and _prev_nid_of_best != native_id
+                                and _nid_d_jump)
+            if _matched and not _native_replaced:
                 track_id = best_track
                 assigned.add(best_track)
             else:
@@ -1441,8 +1501,19 @@ class RadarInterface(RadarInterfaceBase):
                 self._song_plus_next_id += 1
                 assigned.add(track_id)
                 self._song_plus_birth[track_id] = now
+                if _native_replaced:
+                    assigned.add(best_track)   # 防止同帧另一候选再匹配旧 track
+                    _replaced.add(best_track)
             if slot not in slot_used:
                 slot_used.add(slot)
+
+            # 状态码 130 = 即将消失 (见 SONG_PLUS_STATE_VALID 注释): 记录该 track 的最后
+            # 感知时刻, 本轮匹配结束后若不再出现, 只保留 SONG_PLUS_EXPIRING_HOLD 秒
+            # (丰田 NEW_TRACK/255 立即删点的近似); 重新出现 128/129 即清除标记。
+            if state == 130:
+                self._song_plus_expiring[track_id] = now
+            else:
+                self._song_plus_expiring.pop(track_id, None)
 
             # 阶段4: vRel 距离差分 + 输出低通 (track_id 现在关联稳定, 差分有效)
             # 雷达 14.5Hz 轮询分片传输: 同目标每 ~0.07s 匹配一次, 但批间隔仅 ~0.01s。
@@ -1567,6 +1638,21 @@ class RadarInterface(RadarInterfaceBase):
                 if _prev_nid is not None and _prev_nid != native_id:
                     _slot_changed = True
                 self._song_plus_native_id[track_id] = native_id
+            # 【2026-11-05 弯道长窗兜底】短窗差分无结论 (强弯距离噪声 ±1.5m@30Hz, D2 门
+            #   频触发, 1a--6 实测全程 NA) 时, b6 单独兜底在强弯上不可信 (实测 b6=+2.2 远离
+            #   而长窗趋势 -3.6 接近, 方向相反)。预计算 hist 长窗差分 (span≈1.4s, hist 保留
+            #   2s), 供 b6 交叉验证与质量位跳过时的兜底; 逐帧噪声在长窗被平均。
+            _v_lwin = None
+            _b6_used = False
+            if SONG_PLUS_VREL_LWIN_FALLBACK and (not _v_diff_ok) and len(hist) >= 4:
+                _t_old, _d_old = hist[0][0], hist[0][1]
+                for _he in hist:
+                    if now - _he[0] <= 1.4:
+                        _t_old, _d_old = _he[0], _he[1]
+                        break
+                _dt_l = now - _t_old
+                if _dt_l >= 1.0:
+                    _v_lwin = (dist - _d_old) / _dt_l
             if dist_raw < SONG_PLUS_VREL_B6_MAX_DREL and not _slot_changed:
                 _c6 = self._song_plus_b6_cache.get(slot)
                 if _c6 is not None and now - _c6[1] <= SONG_PLUS_VREL_B6_FRESH_S:
@@ -1586,12 +1672,26 @@ class RadarInterface(RadarInterfaceBase):
                             _beta = (SONG_PLUS_VREL_B6_FUSE_BETA_NEW
                                      if 0 <= _b7f < SONG_PLUS_VREL_B6_FUSE_B7_MAX
                                      else SONG_PLUS_VREL_B6_FUSE_BETA)
-                            vrel = max(min(vrel + _beta * (v_b6 - vrel), 30.0), -30.0)
+                            # 【2026-11-05 失配保护】b6 与差分严重失配 (填充残留/换目标串位)
+                            #   → 丢弃 b6 保差分。合法失配 (两路各自误差之和) 实测 <2.5 m/s,
+                            #   毒化样例 +5.2 m/s, 4.0 阈值留足余量。
+                            if abs(v_b6 - vrel) <= 4.0:
+                                vrel = max(min(vrel + _beta * (v_b6 - vrel), 30.0), -30.0)
                         else:
-                            vrel = v_b6
+                            # 【2026-11-05 弯道长窗兜底】与 b6 交叉验证 (见上方 _v_lwin 注释):
+                            #   失配 >3 → 弃 b6 用长窗差分; 一致 → 用 b6 (更新鲜)。
+                            if _v_lwin is None or abs(v_b6 - _v_lwin) <= 3.0:
+                                vrel = v_b6
+                            else:
+                                vrel = max(min(_v_lwin, 30.0), -30.0)
+                            _b6_used = True
                 # b6 不可用 (无缓存/过期/坏帧且非强接近/本帧换槽) 或 >50m → 保留上方差分结果。
                 # 【10-03】原此处 b2 粗接近率兜底已删除 (证伪: tracker 状态量, 换目标串位,
                 #   08:01 事件 b2=23~35 ↔ 真值 v/d -0.19 → 假接近 -14~-19 → 幽灵慢车急刹)。
+            # 【2026-11-05 弯道长窗兜底】b6 未采用 (质量位跳过/无缓存/过期) 且短窗无结论
+            #   → 用长窗差分兜底 (弯道上唯一方向正确的来源)。
+            if SONG_PLUS_VREL_LWIN_FALLBACK and (not _v_diff_ok) and (not _b6_used) and _v_lwin is not None:
+                vrel = max(min(_v_lwin, 30.0), -30.0)
             # 输出低通 (每 track 独立, 平滑差分噪声; 低速/无效帧也更新 → 速度平滑收敛)
             # 2026-08-26 不对称低通: 上升沿 (vRel 升 = 目标加速/远离, 无碰撞风险方向) tau 压缩
             # 快速跟随; 下降沿 (目标减速/接近, 危险方向) 维持原 tau 平滑不变。
@@ -1607,6 +1707,18 @@ class RadarInterface(RadarInterfaceBase):
             #   bit5=1 (降级) 0.312m  |  bit5=0 且 低4位≥11 (好) 0.125m  —— 2.5x
             #   低4位 q=14/15 → 0.062m (最稳), q=0-3 → 0.188-0.250m。
             # 差帧用更长 tau 平滑, 好帧用更短 tau 快速跟随。
+            # 【2026-11-05 字段反查补充】sub3.b4 不是单纯质量字节:
+            #   bit7 与状态码强绑定 (state128 时 93.5% 置 1, state129/130 仅 16.7%);
+            #   低4位是距离噪声等级 (state129 内 g=11 抖动 0.116m, g=0-3 0.38-0.45m,
+            #   g=15 0.35m 非单调, ">=11 好" 需谨慎); 低7位**不是检测置信度**。
+            #   0x380 全字段反查(71 段)确认无 SCORE 等价字段, 勿把 q4/状态码用作新目标
+            #   发布门控 (实测门控精度 4%/2.4%)。
+            # 【2026-11-05 深夜补测】bit7×bit5 联合抖动表 (77k 样本):
+            #   b7=0/b5=0 0.202m | b7=0/b5=1 0.355m | b7=1/b5=0 0.309m | b7=1/b5=1 0.458m
+            #   → bit5 ×1.63 (现有 1.6 正确), bit7 ×1.37 为独立轴, 但**不加**:
+            #   离线 A/B (71 段, 同输入同参考) 实测加 bit7×1.4 使 median|vRel-ref|
+            #   0.603→0.632 (+5%), bit7=1 子集 0.732→0.785 —— 滞后代价 > 降噪收益。
+            #   现有 tau 已在噪声/滞后权衡的最优附近, 不要再动。
             # 【2026-10-22 M12 审计修正】原文误写 "bit4=1 & bit5=0" —— 代码只用
             #   bit5(降级) 与低4位(等级), 不看 bit4(有效性)。bit4 与抖动的关系
             #   被 bit5 主导 (bit5=1 时无论 bit4 都是 0.25~0.31m), 故不参与调权。
@@ -1615,6 +1727,14 @@ class RadarInterface(RadarInterfaceBase):
                     tau *= 1.6        # 降级帧, 多平滑
                 elif (q4 & 0x0F) >= 11:
                     tau *= 0.7        # 高质量帧, 快速跟随
+            # 【2026-11-05 Quality/Deg 独立噪声轴】184 段 OP纵向 A/B: median -10%, 滞后 -3%。
+            #   与 bit5 轴近似正交 (联合表见 SONG_PLUS_TAU_QF 注释); young 封顶仍在其后兜底。
+            _s1f_q = frame_map.get(0x380 + 4 * slot + 1)
+            if _s1f_q is not None and len(_s1f_q) >= 8:
+                tau *= SONG_PLUS_TAU_QF.get((_s1f_q[4] >> 3) & 3, 1.0)
+            _s2f_q = frame_map.get(0x380 + 4 * slot + 2)
+            if _s2f_q is not None and len(_s2f_q) >= 8:
+                tau *= SONG_PLUS_TAU_DF.get((_s2f_q[2] >> 3) & 3, 1.0)
             if _young:
                 tau = min(tau, SONG_PLUS_VREL_YOUNG_TAU)   # 揭示期双向快跟 (见常量注释)
             if vrel > v_filter.x:
@@ -1707,8 +1827,38 @@ class RadarInterface(RadarInterfaceBase):
                 #   同时从 pts 移除, 防止绿框留在车道边。
                 self.pts.pop(tid, None)
                 continue
+            if tid in _replaced:
+                # 【2026-11-05】原生航迹 ID 变化 = 槽内换目标 (丰田 NEW_TRACK 语义):
+                #   旧 track 不能保留 (否则旧位置/旧 vRel 以衰减值继续发布 2s → 幽灵前车),
+                #   立即从 pts 与全部速度状态中移除。
+                self.pts.pop(tid, None)
+                self._song_plus_hist.pop(tid, None)
+                self._song_plus_last_t.pop(tid, None)
+                self.vrel_filters.pop(tid, None)
+                self._song_plus_vrel_out.pop(tid, None)
+                self._pts_not_seen.pop(tid, None)
+                self._song_plus_native_id.pop(tid, None)
+                self._song_plus_birth.pop(tid, None)
+                self._song_plus_expiring.pop(tid, None)
+                continue
             if tid not in new_tracks:
-                if now - pos[3] <= SONG_PLUS_TRACK_TIMEOUT:
+                # 130 目标已宣告消失 → 只留 SONG_PLUS_EXPIRING_HOLD 后立即删点
+                # (丰田 NEW_TRACK/255 语义); 正常目标仍用 2s 覆盖 14.5Hz 轮询缺口。
+                _hold = SONG_PLUS_EXPIRING_HOLD if tid in self._song_plus_expiring else SONG_PLUS_TRACK_TIMEOUT
+                if now - pos[3] > _hold and tid in self._song_plus_expiring:
+                    # 130 已宣告消失且超过保留窗: 不等 stale 递减, 立即从 pts 移除,
+                    # 防止幽灵前车 (vLead=vEgo) 继续参与发布/视觉配对。
+                    self.pts.pop(tid, None)
+                    self._song_plus_hist.pop(tid, None)
+                    self._song_plus_last_t.pop(tid, None)
+                    self.vrel_filters.pop(tid, None)
+                    self._song_plus_vrel_out.pop(tid, None)
+                    self._pts_not_seen.pop(tid, None)
+                    self._song_plus_native_id.pop(tid, None)
+                    self._song_plus_birth.pop(tid, None)
+                    self._song_plus_expiring.pop(tid, None)
+                    continue
+                if now - pos[3] <= _hold:
                     # vRel 衰减: 距上次观测越久越不可信, 线性衰减到 0 (1s 内归零)
                     dt_unseen = now - pos[3]
                     decay = max(0.0, 1.0 - dt_unseen)
@@ -1754,6 +1904,7 @@ class RadarInterface(RadarInterfaceBase):
                 self._pts_not_seen.pop(k, None)
                 self._song_plus_native_id.pop(k, None)   # 同步清理原生航迹ID缓存, 防无限增长
                 self._song_plus_birth.pop(k, None)       # 揭示期判龄缓存, 同步清理
+                self._song_plus_expiring.pop(k, None)    # 130 收尾标记, 同步清理
 
         # 更新帧间聚类中心 (供下一帧关联)
         self._song_plus_tracks = new_tracks
@@ -1777,6 +1928,7 @@ class RadarInterface(RadarInterfaceBase):
                     #   trackId 自增致 _song_plus_native_id 无界增长 (内存泄漏)。
                     self._song_plus_native_id.pop(k, None)
                     self._song_plus_birth.pop(k, None)   # 揭示期判龄缓存, 同步清理 (M3 同款)
+                    self._song_plus_expiring.pop(k, None)  # 130 收尾标记, 同步清理
 
         self.pts.update(self._pts_cache)
 
