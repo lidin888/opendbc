@@ -252,7 +252,7 @@ SONG_PLUS_VREL_B6_MAX_DREL = 75.0   # <75m 用 b6; >75m 差分地盘。
 #   另: 50m 外 b6 分布 p50=249~253 的"编码切换"假象 = 未过滤的填充帧, 非新编码。
 SONG_PLUS_VREL_B6_FRESH_S = 1.0     # 速度帧新鲜度: 最近 real 帧 ≤1s 才用 (与 probe 工具一致)
 SONG_PLUS_VREL_B6_BIAS_V = -3.0     # 强接近阈值 (保守偏置方向=更接近, 安全)
-SONG_PLUS_VREL_B6_BIAS = 0.7        # 强接近保守偏置 (m/s; 补偿 b6 大值压缩: 裸 bias +0.58 → 加后 -0.01)
+SONG_PLUS_VREL_B6_BIAS = 0.0        # 2026-11-06 归零: 新 11 位速度字段 bias=-0.001, 不再低估接近率, 无需补偿        # 强接近保守偏置 (m/s; 补偿 b6 大值压缩: 裸 bias +0.58 → 加后 -0.01)
 # 【P1 2026-10-03】b6 × 差分 **互补融合** 权重 (取代原"b6 直接替换差分")。
 # 依据 (m380_fuse_ab.py, 宋21 34 段, 逐字复刻本生产链含输出低通):
 #   错误结构 (b6 替换差分, β=1) 的问题不是精度而是**系统性偏置** —— 实测 bias -0.131 m/s
@@ -270,7 +270,18 @@ SONG_PLUS_VREL_B6_BIAS = 0.7        # 强接近保守偏置 (m/s; 补偿 b6 大�
 # 🚨 **回滚方式 (易错, 务必看清)**: 想退回改动前的"b6 直接替换差分"行为, 需把下面两个
 #   常量都设成 **1.0** (β=1.0 ⇔ v = 差分 + 1.0·(b6 − 差分) = b6, 即原替换行为)。
 #   **设成 0.0 不等于回滚** —— β=0 得到的是"纯差分"(完全丢弃 b6), 与改动前不同。
-SONG_PLUS_VREL_B6_FUSE_BETA = 0.25
+# 【2026-11-06 真·速度字段】0x3C8+g 的 b2|(b3&0x07)<<8 是 11 位**相对速度**。
+#   之前一直把 0x3C8 的 b0(CRC)+b1(全局计数器) 当数据 → 位偏移错 16 位, 11 位字段被切两半,
+#   导致 880 字节/16 位组合/任意位域扫了几万次都没命中 (最高 corr 0.834=b6)。
+#   去掉每帧头 2 字节后 bit0|11 即速度: v = SCALE*code - ZERO。
+#   全量验证 (40 段/3277 样本, 留出): MAE 0.598, corr +0.986, bias -0.001。
+#   分距离带 scale 恒定 0.0136~0.0145 (与距离无关) = 多普勒速度的标志;
+#   对照 b6: MAE 1.832, corr 0.899, 且 1 LSB = d/36 (48m 处 1.33 m/s, 随距离恶化)。
+#   填充帧特征: b2=254,b3低3位=7 → code=2046 (接近全 1), real 帧 b2 从不为 0。
+SONG_PLUS_VREL_V11_SCALE = 0.013802   # m/s per LSB (全量拟合)
+SONG_PLUS_VREL_V11_ZERO  = 11.858     # 零点偏移 (code=859 → v=0)
+
+SONG_PLUS_VREL_B6_FUSE_BETA = 0.10   # 2026-11-06 离线标定 (1298 样本, 视觉 vRel 真值): β=0.10 MAE 1.013 最优, β=0.25 MAE 1.017
 # 【P1b 2026-10-03】β 按**目标成熟度**自适应: sub2.b7 (0x382+4g 的 b7) = 雷达内部**轨迹跟踪
 # 计数器**。语义确认 (m380_b7_adaptive.py, 宋21 34 段, n=38857, 用**实测龄期**(距离跳变>3m
 # 或首次占用起算) 而非假设): corr(b7, 实测龄期) = **+0.505**, 分桶 b7=0-1→0.33s /
@@ -283,7 +294,7 @@ SONG_PLUS_VREL_B6_FUSE_BETA = 0.25
 #   / bias -0.012→**-0.001**; 事件段 MAE 0.350→**0.323** / RMSE 0.585→**0.570** / bias -0.092→-0.074;
 #   分距离 15-25m -5.7% / 25-35m -5.3% / 35-50m -9.8% (4 桶全部同向)。**门再收紧 (b7<4→β=0)
 #   反而变差** (MAE 0.357/0.406) → 0.08 是已验证的最优档, 勿再往下压。
-SONG_PLUS_VREL_B6_FUSE_BETA_NEW = 0.08
+SONG_PLUS_VREL_B6_FUSE_BETA_NEW = 0.05   # 2026-11-06 同步下调 (新目标更信差分)
 SONG_PLUS_VREL_B6_FUSE_B7_MAX = 8      # b7 < 此值 = 新目标 → 用 BETA_NEW
 SONG_PLUS_VREL_B6_K = 6.5           # 零点偏移 (b6=-6.5 ↔ vRel≈0; 半档结构)
 SONG_PLUS_VREL_B6_C6 = ((75.0, 36.0), (1e9, 88.0))   # <75m 统一 36 (A/B 实测 50-75m C=36 有效, 见 MAX_DREL 注释)
@@ -296,23 +307,6 @@ def _song_plus_c6(d: float) -> float:
       return c
   return SONG_PLUS_VREL_B6_C6[-1][1]
 
-
-def _song_plus_v_from_b6(b6: int, d: float) -> float:
-  """vRel ≈ -(b6+6.5)*d/C(d)  [m/s]; 负=追近。d 用未修正 raw 距离 (标定口径)。"""
-  return -(b6 + SONG_PLUS_VREL_B6_K) * d / _song_plus_c6(d)
-
-
-# ---- CRC-8/J1850 查表 (2026-09-22 落地; 仅用于 b2 兜底缓存入口, 见文件头注释) ----
-def _mk_song_plus_crc_tab(poly=0x1D):
-    tab = []
-    for i in range(256):
-        c = i
-        for _ in range(8):
-            c = ((c << 1) ^ poly) & 0xFF if c & 0x80 else (c << 1) & 0xFF
-        tab.append(c)
-    return bytes(tab)
-
-_SONG_PLUS_CRC_TAB = _mk_song_plus_crc_tab()
 
 
 def _song_plus_crc_ok(d) -> bool:
@@ -372,7 +366,11 @@ SONG_PLUS_YREL_B5_MAX = 124    # b5 有效范围上限。b5=192 是远距轮询�
 SONG_PLUS_YREL_ANGLE_RES = 0.014 * 57.2958  # 角度分辨率 ≈0.8°/LSB (commalog0811 实测锁定)
 # ---- sub1.b6 横移档位 → 横向速度 (2026-10-03 新解, 帧级分箱标定; 零点 125, 饱和 ≈±3m/s) ----
 SONG_PLUS_YVREL_ZERO = 125     # 中性值 (占 32% 帧) —— 笔记曾误把 125 当"近常量填充"
-SONG_PLUS_YVREL_PER_COUNT = 0.25  # m/s per 档 (110~119→-2.82 / 130~139→+2.31 中位标定)
+# 【2026-11-06 刻度修正】0.25 -> 0.028 m/s per count (8839 样本: 自由拟合 0.02838, MAE 0.047;
+#   分箱 b6=115→yvRel -0.266 / 125→0 / 135→+0.281, 零点 125 吻合)。旧值 0.25 放大 8.9 倍。
+#   注: RadarPoint.yvRel 在 car.capnp 的 deprecated :group 里 → 上游弃用, 不对外输出;
+#     yv_rel 仅用于 radar 内部 track 关联预测 (见 pred_y)。
+SONG_PLUS_YVREL_PER_COUNT = 0.028  # m/s per count (2026-11-06 标定; 旧 0.25 错 8.9 倍)
 SONG_PLUS_YVREL_MAX = 3.0      # m/s 饱和限 (两侧档位实测饱和在 ±3 附近)
 
 
@@ -1068,12 +1066,12 @@ class RadarInterface(RadarInterfaceBase):
 
             # output smoothing (per-target low-pass)
             v_filter = self.vrel_filters.setdefault(target_id, LowPassFilter(kf.v_rel))
-            if self.v_ego < 10.0:
-                tau = 0.5
-            elif self.v_ego < 20.0:
-                tau = 0.3
-            else:
-                tau = 0.2
+            # 【2026-11-06 tau 下调】11 位速度字段 (MAE 0.598, 噪声 0.085 m/s 且不随距离恶化)
+            #   到位后, 强滤波不再必要。离线标定 (8 轨迹, 噪声×滞后): tau=0.20 最优
+            #   (0.10→7.74 / 0.15→6.06 / 0.20→5.01 / 0.30→7.30, 0.30 后滞后翻倍至 139ms)。
+            #   回放 (段9+13): 硬刹 89→73 (-18%), jerk 1.015→0.936, 微振荡 5.4 不变。
+            #   滞后 70ms vs 原 18.6m/s 时 139ms → 规划器提前响应, 反而减少事后猛刹。
+            tau = 0.20
             v_smoothed = v_filter.update(kf.v_rel, dt, tau)
 
             # fill RadarPoint - ensure consistency: use same (smoothed) vRel for both vRel and vLead
@@ -1325,7 +1323,9 @@ class RadarInterface(RadarInterfaceBase):
                         #   (249 段/184 有效, 逐变体只改 tau): qd 基线 median 0.4885, 加 b7×1.2/1.4/1.6
                         #   后 0.4940/0.4984/0.5020, P90/稳态/制动 bias 同向劣化 —— 滞后代价 > 降噪收益,
                         #   与 sub3.b4.bit7 同结论。b7 的正确用法就是现在这个: 只用来退 b6 差分。
-                        self._song_plus_b6_cache[a - 0x3C8] = (_b6s, now, bool(d[7] & 1))
+                        # 【2026-11-06】存解码后的 11 位速度 (取代原始 b6, 见常量区说明)
+                        _v11 = SONG_PLUS_VREL_V11_SCALE * (int(d[2]) | ((int(d[3]) & 0x07) << 8)) - SONG_PLUS_VREL_V11_ZERO
+                        self._song_plus_b6_cache[a - 0x3C8] = (_v11, now, bool(d[7] & 1))
                 # sub2 帧 (0x382+4g) 的 b2 粗接近率: **10-03 已证伪, 缓存不再写入**
                 # (b2 = 雷达 per-slot tracker 状态量, 换目标后串位; 见 SONG_PLUS_VREL_B2_* 注释区)。
 
@@ -1448,8 +1448,8 @@ class RadarInterface(RadarInterfaceBase):
         # 同 slot 且距离近优先匹配 → 减少"前车快速接近时 tid 重排导致目标分裂成两个 track"
         # 引发的绿框/前车速度跳变。回放实测(全19段): 零误合并(track内跳变0, 与BASE同),
         # s1track 283→262(-7.4%), 切换 496→479(-3.4%); seg4 分裂改善显著(25→19, 切换32→28)。
-        prev_tracks = self._song_plus_tracks  # {track_id: (dRel, yRel, vRel, t, slot)} 上次状态
-        new_tracks = {}  # track_id -> (dRel, yRel, vRel, t, slot) 本帧更新后
+        prev_tracks = self._song_plus_tracks  # {track_id: (dRel, yRel, vRel, t, slot, yvRel)} 上次状态 (2026-11-06 加 yvRel)
+        new_tracks = {}  # track_id -> (dRel, yRel, vRel, t, slot, yvRel) 本帧更新后
         assigned = set()
         slot_used = set()  # FIX1: 本帧已被匹配的 slot (同 slot 优先只作用于首个候选)
         _static_dropped = set()  # 【M4】本帧被高速静态物过滤剔除的 track, 保留循环需跳过
@@ -1458,14 +1458,16 @@ class RadarInterface(RadarInterfaceBase):
         for dist, yrel, state, slot, dist_raw, yv_rel, native_id, q4 in points:
             best_track = None
             best_score = float('inf')
-            for tid, (pd, py, pv, pt, pslot) in prev_tracks.items():
+            for tid, _tr in prev_tracks.items():
                 if tid in assigned:
                     continue
+                pd, py, pv, pt, pslot = _tr[:5]
+                pyv = _tr[5] if len(_tr) > 5 else 0.0   # 横向速度 (2026-11-06 接入; 兼容旧 5 元组)
                 # 速度预测: 目标按上次 vRel 移动 dt 后的预期位置
                 dt = now - pt
-                if dt > 0 and abs(pv) > 0.05 and dt < 0.5:
-                    pred_d = pd + pv * dt
-                    pred_y = py  # 横向无速度, 保持
+                if dt > 0 and dt < 0.5:
+                    pred_d = pd + (pv * dt if abs(pv) > 0.05 else 0.0)
+                    pred_y = py + pyv * dt   # 【2026-11-06】横向速度预测 (原"保持", 横移目标跟丢原因)
                 else:
                     pred_d = pd
                     pred_y = py
@@ -1671,7 +1673,8 @@ class RadarInterface(RadarInterfaceBase):
             if dist_raw < SONG_PLUS_VREL_B6_MAX_DREL and not _slot_changed:
                 _c6 = self._song_plus_b6_cache.get(slot)
                 if _c6 is not None and now - _c6[1] <= SONG_PLUS_VREL_B6_FRESH_S:
-                    v_b6 = _song_plus_v_from_b6(_c6[0], dist_raw)
+                    # 【2026-11-06】缓存存的是 11 位解码后的 m/s (见常量区), 直接用
+                    v_b6 = float(_c6[0])
                     if not _c6[2] or v_b6 < SONG_PLUS_VREL_B6_BIAS_V:
                         if v_b6 < SONG_PLUS_VREL_B6_BIAS_V:
                             v_b6 -= SONG_PLUS_VREL_B6_BIAS
@@ -1690,12 +1693,12 @@ class RadarInterface(RadarInterfaceBase):
                             # 【2026-11-05 失配保护】b6 与差分严重失配 (填充残留/换目标串位)
                             #   → 丢弃 b6 保差分。合法失配 (两路各自误差之和) 实测 <2.5 m/s,
                             #   毒化样例 +5.2 m/s, 4.0 阈值留足余量。
-                            if abs(v_b6 - vrel) <= 4.0:
+                            if abs(v_b6 - vrel) <= 2.0:   # 2026-11-06 收窄: 新字段 MAE 0.598 (原 b6 1.832)
                                 vrel = max(min(vrel + _beta * (v_b6 - vrel), 30.0), -30.0)
                         else:
                             # 【2026-11-05 弯道长窗兜底】与 b6 交叉验证 (见上方 _v_lwin 注释):
                             #   失配 >3 → 弃 b6 用长窗差分; 一致 → 用 b6 (更新鲜)。
-                            if _v_lwin is None or abs(v_b6 - _v_lwin) <= 3.0:
+                            if _v_lwin is None or abs(v_b6 - _v_lwin) <= 2.0:   # 2026-11-06 收窄, 同上
                                 vrel = v_b6
                             else:
                                 vrel = max(min(_v_lwin, 30.0), -30.0)
@@ -1777,7 +1780,7 @@ class RadarInterface(RadarInterfaceBase):
                     _static_dropped.add(track_id)
                     continue
             # 补全聚类中心 (含速度用于下一帧预测匹配; slot 用于 FIX1 同槽优先关联)
-            new_tracks[track_id] = (dist, yrel, vrel, now, slot)
+            new_tracks[track_id] = (dist, yrel, vrel, now, slot, yv_rel)
 
             if track_id not in self._pts_cache:
                 self._pts_cache[track_id] = structs.RadarData.RadarPoint()
@@ -1881,7 +1884,7 @@ class RadarInterface(RadarInterfaceBase):
                     # 时间戳必须保留原始上次匹配时间 pos[3]，不能写 now:
                     # 写 now 会每帧刷新存活时间戳, now-pos[3] 恒~0 → 永不过期
                     # → 幽灵 track 永驻, 绿框不消失 + vRel 衰减失效 (2026-08-18 bug 修复)
-                    new_tracks[tid] = (pos[0], pos[1], vrel_decay, pos[3], pos[4])
+                    new_tracks[tid] = (pos[0], pos[1], vrel_decay, pos[3], pos[4], pos[5] if len(pos) > 5 else 0.0)
                     # 同步衰减 pts 输出的 vRel: 旧 track 在 _pts_cache 外(仅匹配帧写入),
                     # 保留期间 stale 清理不删它 → pts 持续带旧 vRel 输出 (段26 id896 假速度 -5.4 骗重刹)。
                     # 这里直接改 self.pts[tid] 让衰减后的 vRel 生效。
