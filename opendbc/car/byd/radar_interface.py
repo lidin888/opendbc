@@ -344,18 +344,7 @@ def _song_plus_v_from_b2(b2: int, d: float) -> float:
   if b2 < 1 or b2 >= 255 or d < 0.5:
     return float('nan')
   return -d * (b2 - SONG_PLUS_VREL_B2_C0) / SONG_PLUS_VREL_B2_C1
-# 【2026-11-06 P0 修正】方位角 scale 0.014 -> 0.002 rad/LSB。
-#   物理依据: b5 有效域 10~124, 中心 95 → 最大偏差 85 LSB。
-#     0.014 rad/LSB × 85 = ±102° 视场 —— 前向毫米波雷达不可能 (实测 FOV ±9~15°);
-#     0.002 rad/LSB × 85 = ±9.7°  —— 与官方 DBC 的 AzimuthAng(0.002 rad/LSB) 及 FOV 一致。
-#   数据依据 (967 段唯一日志 / 28,623 样本):
-#     视觉 lead 交叉验证: 0.014 → MAE 0.28m; 0.002 → MAE 0.10m (2.8 倍改善), 符号一致率均 87% 不变;
-#     说明旧值只是"横向被放大 7 倍", 不是符号问题 (符号一直是对的)。
-#   ⚠️ 下游所有以【米】为单位的横向阈值 (STATIC_MAX_LAT/MATCH_YREL_TOL/VREL_MAX_DY/
-#     VREL_LWIN_YREL/|yrel|>10 上限, 以及 radard 的 LEAD_YREL_CUTOFF/KEEP/
-#     LEAD_MATCH_LATERAL_SANE) 无需改动 —— 它们本来就是米制, 旧代码是在被放大 7 倍的
-#     假尺度上标定的, 本次修正后它们才真正对应物理米制。改动后需路测观察横向闸门行为。
-SONG_PLUS_YREL_SCALE = 0.002  # 方位角 scale (rad/LSB): y = scale * d * (b5 - offset)。b5>95=左。
+SONG_PLUS_YREL_SCALE = 0.014   # 方位角 scale (rad/LSB): y = scale * d * (b5 - offset)。b5>95=左。
 # 【2026-10-22】yRel 改用 11 位精细方位 (bit144|11 = sub3.b2 + sub3.b3低3位)。
 #   刻度/零点用 b5 交叉校验网格搜最优 (28,234 样本): |y_new−y_old| 中位 0.324m, 差值中位 +0.056m。
 # 【精度对比】全量 .comma* 5,867 条长轨迹 (距离跨度>15m) 实测:
@@ -380,7 +369,7 @@ SONG_PLUS_YREL_OFFSET = 95.0   # 方位角 offset (b5=95 → 正前方 0°)。20
 SONG_PLUS_YREL_B5_MIN = 10     # b5 有效范围下限。左侧大角度真实目标最低 b5=10(slot1)/14(tid3);
                                # 原[78,108]过滤把左侧大角度车(b5<78)全丢了 → 路测"左边车没绿框"
 SONG_PLUS_YREL_B5_MAX = 124    # b5 有效范围上限。b5=192 是远距轮询槽(0x3C8)无方位角默认值, 必须排除
-SONG_PLUS_YREL_ANGLE_RES = 0.002 * 57.2958  # 角度分辨率 ≈0.115°/LSB (随 P0 刻度 0.002 同步)
+SONG_PLUS_YREL_ANGLE_RES = 0.014 * 57.2958  # 角度分辨率 ≈0.8°/LSB (commalog0811 实测锁定)
 # ---- sub1.b6 横移档位 → 横向速度 (2026-10-03 新解, 帧级分箱标定; 零点 125, 饱和 ≈±3m/s) ----
 SONG_PLUS_YVREL_ZERO = 125     # 中性值 (占 32% 帧) —— 笔记曾误把 125 当"近常量填充"
 SONG_PLUS_YVREL_PER_COUNT = 0.25  # m/s per 档 (110~119→-2.82 / 130~139→+2.31 中位标定)
@@ -1393,15 +1382,7 @@ class RadarInterface(RadarInterfaceBase):
             #   ③ 与 b5 粗值交叉校验: |y_fine - y_b5| > 2.0m (实测 p99=2.25m) 判为
             #      sub3 错帧/别名, 退 b5 (b5 有车道三峰结构独立验证, 是可信基线)。
             yrel = SONG_PLUS_YREL_SCALE * dist_raw * (b5 - SONG_PLUS_YREL_OFFSET)   # 默认: b5 粗值
-            # 【2026-11-06 P0 停用精细方位】bit144|11 的 "11 位精细方位" 经 967 段/12972 样本
-            #   复核为**破译错误**, 已停用 (保留常量, 仅注释):
-            #   ① 与 b5 的相关仅 0.52, 按 b5 分箱中位不单调 (b5 40-60 → c144 1458, b5 60-80 → c144 404);
-            #   ② 独立拟合零点 1211, 代码用 1044 (差 167 LSB); 刻度应 0.00022, 代码用 0.00042 (差 1.9 倍);
-            #   ③ 符号与 b5 相反 → 而交叉校验只比绝对值 (不查符号), 故错误值被采纳;
-            #   ④ 实测采纳率 99.9% (几乎全程在用错的精细值), 视觉 lead 符号一致率仅 14%
-            #      (粗值 b5 为 84~87%)。停用后 MAE 0.71 → 0.10 m, 符号一致率 14% → 84%。
-            #   若日后要复活该字段, 必须先用受控采集定死零点/刻度/符号, 并加符号交叉校验。
-            if False and sub3 is not None and len(sub3) >= 8:
+            if sub3 is not None and len(sub3) >= 8:
                 _c144 = int(sub3[2]) | ((int(sub3[3]) & 0x07) << 8)   # bit144|11 = sub3.b2 + sub3.b3低3位
                 # 【2026-10-22 简化】原先另有 c144 范围门 (200~2040), 实测触发率 0.00%
                 #   (9/191,986), 且极端值 (0/2047) 会让 y_fine 与 y_b5 差 20m+,
