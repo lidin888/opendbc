@@ -338,7 +338,17 @@ def _song_plus_v_from_b2(b2: int, d: float) -> float:
   if b2 < 1 or b2 >= 255 or d < 0.5:
     return float('nan')
   return -d * (b2 - SONG_PLUS_VREL_B2_C0) / SONG_PLUS_VREL_B2_C1
-SONG_PLUS_YREL_SCALE = 0.014   # 方位角 scale (rad/LSB): y = scale * d * (b5 - offset)。b5>95=左。
+# 【2026-11-08 修正 0.014 -> 0.002】b5 与 c144 必须自洽 (位关系 33x)。
+#   实测 2889 帧 (每帧最近目标 vs 车道线本车道中心):
+#     0.014       偏差中位 3.19m  车道内 18.0%  严重越界 67.5%   ← 错 7 倍
+#     0.002       偏差中位 0.96m  车道内 85.7%  严重越界  2.8%   ← 正确
+#     c144 0.000061  偏差中位 0.95m  车道内 88.3%  严重越界 0.7% (当前已用, 正确)
+#   0.014 / 0.000061 = 229 倍, 与实测位关系 33 倍矛盾 → c144 被交叉校验拒绝,
+#   退到错的 b5 → 目标算到邻车道 ("认错旁边车道车"的真因)。
+#   0.002 / 0.000061 = 32.8 ≈ 33 → 两者自洽, 交叉校验恢复正常。
+#   物理: b5 有效 10~124, 中心 95, 最大偏差 85 LSB → 0.002*85 = 9.7° (前向雷达 FOV);
+#        0.014*85 = 68° (不可能)。
+SONG_PLUS_YREL_SCALE = 0.002   # 方位角 scale (rad/LSB): y = scale * d * (b5 - 95)
 # 【2026-10-22】yRel 改用 11 位精细方位 (bit144|11 = sub3.b2 + sub3.b3低3位)。
 #   刻度/零点用 b5 交叉校验网格搜最优 (28,234 样本): |y_new−y_old| 中位 0.324m, 差值中位 +0.056m。
 # 【精度对比】全量 .comma* 5,867 条长轨迹 (距离跨度>15m) 实测:
@@ -368,7 +378,7 @@ SONG_PLUS_YREL_OFFSET = 95.0   # 方位角 offset (b5=95 → 正前方 0°)。20
 SONG_PLUS_YREL_B5_MIN = 10     # b5 有效范围下限。左侧大角度真实目标最低 b5=10(slot1)/14(tid3);
                                # 原[78,108]过滤把左侧大角度车(b5<78)全丢了 → 路测"左边车没绿框"
 SONG_PLUS_YREL_B5_MAX = 124    # b5 有效范围上限。b5=192 是远距轮询槽(0x3C8)无方位角默认值, 必须排除
-SONG_PLUS_YREL_ANGLE_RES = 0.014 * 57.2958  # 角度分辨率 ≈0.8°/LSB (commalog0811 实测锁定)
+SONG_PLUS_YREL_ANGLE_RES = 0.002 * 57.2958  # 角度分辨率 ≈0.115°/LSB (2026-11-08 随 SCALE 修正)
 # ---- sub1.b6 横移档位 → 横向速度 (2026-10-03 新解, 帧级分箱标定; 零点 125, 饱和 ≈±3m/s) ----
 SONG_PLUS_YVREL_ZERO = 125     # 中性值 (占 32% 帧) —— 笔记曾误把 125 当"近常量填充"
 # 【2026-11-06 刻度修正】0.25 -> 0.028 m/s per count (8839 样本: 自由拟合 0.02838, MAE 0.047;
@@ -1518,6 +1528,9 @@ class RadarInterface(RadarInterfaceBase):
                 self._song_plus_birth[track_id] = now
                 if _native_replaced:
                     assigned.add(best_track)   # 防止同帧另一候选再匹配旧 track
+                    # _replaced 的完整清理在下方"保留未轮询旧 track"循环里统一做
+                    # (含 self.pts / hist / last_t / vrel_filters / vrel_out / not_seen /
+                    #  native_id / birth / expiring 共 9 项)。此处只登记, 不重复清。
                     _replaced.add(best_track)
             if slot not in slot_used:
                 slot_used.add(slot)
