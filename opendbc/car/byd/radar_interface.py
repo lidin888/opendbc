@@ -230,6 +230,22 @@ SONG_PLUS_VREL_OUT_SLEW = 1.25    # 【2026-11-04 输出 vRel 帧间限变】发
                                   #   → 1.25 零触碰; 毒帧被压到 1.25/帧, 任意毒源兜底。
                                   #   新 track 锚=0 → 首帧 ≤±1.25, 真值持续 2~3 帧追上。
                                   #   只限发布值 (pt/聚类中心), 低通内部状态不回写。
+SONG_PLUS_VREL_OUT_ACC = 10.0     # 【2026-11-09 vRel 输出斜率上限 (按时间)】补 OUT_SLEW 的洞:
+                                  #   OUT_SLEW 是"每帧 m/s", track 14.5Hz 更新 → 等效斜率 1.25×14.5≈18 m/s²,
+                                  #   连续 3+ 帧假趋势照样走出 (11-09 21:10 实测: tid428 出生 0.6s 内
+                                  #   vRel 0→-4.29→-5.35→-0.77→+1.38 摆动, MPC 单帧 -3.5 满刹)。
+                                  #   这里按 dt 限加速度 |ΔvRel|≤ACC×dt (每帧≈0.69 m/s @0.069s)。
+                                  #   真急刹前车 aRel≈-4 放行无阻; 假趋势被压平。10 留裕量
+                                  #   (8 会在前车 -8 急刹时拖慢 ~0.3s)。与 OUT_SLEW 串联, 只限发布值。
+SONG_PLUS_DREL_ENV_MIN = 0.35     # 【2026-11-09 dRel 发布包络 (下限)】每 track 相邻两次发布允许的
+SONG_PLUS_DREL_ENV_PAD = 0.30     #   最大 |ΔdRel| = max(ENV_MIN, |vRel_out|×dt + ENV_PAD)。
+                                  #   动机 (11-09 21:10 实测): tid435 假接近 — dRel 56.6→42.2 持续
+                                  #   滑落 1.5s (隐含 -9.5 m/s), vRel 差分自洽跟上 (+7→-6.5), 前车
+                                  #   实际在跑远 → aTarget -1.7 "前车跑远还在减速"。雷达 14.5Hz
+                                  #   量化 0.0625×2 + 噪声 ≈ 0.3m/更新, 距离变化超出
+                                  #   |vRel|×dt+0.3 的趋势必是量测错误 (串槽/重聚类), 截断发布。
+                                  #   包络只截发布值; hist/差分用原始量测, 真值恢复自动回正。
+                                  #   差分窗内横向大移 (|Δy|>SONG_PLUS_VREL_MAX_DY) 帧豁免 (斜距几何)。
 # ---- b6 精细接近率落地参数 (2026-09-20; 换算函数与 selfdrive/debug/byd_radar_speed_probe.py 同源) ----
 # ⚠️ 命名消歧: 本块的"b6"= 速度槽 0x3C8+g 第7字节(接近率编码);
 #    上方 SONG_PLUS_DREL_B6_SHRINK 的"b6"= 目标 sub0 帧第7字节(距离量程档) —— 两个完全不同的量。
@@ -851,6 +867,8 @@ class RadarInterface(RadarInterfaceBase):
         self.last_valid_long: Dict[int, float] = {}
         self.vrel_filters: Dict[int, LowPassFilter] = {}
         self._song_plus_vrel_out: Dict[int, float] = {}   # 输出 vRel 帧间限变锚点 (2026-11-04)
+        self._song_plus_vrel_out_t: Dict[int, float] = {}  # vRel 斜率上限的时间锚 (2026-11-09)
+        self._song_plus_dout: Dict[int, tuple] = {}        # dRel 发布包络锚 (d, y, t) (2026-11-09)
         self._song_plus_birth: Dict[int, float] = {}      # track 创建时刻 (2026-11-04 揭示期判龄)
         self._song_plus_expiring: Dict[int, float] = {}   # track_id -> 最后见到状态码 130 的时刻
 
@@ -1312,6 +1330,13 @@ class RadarInterface(RadarInterfaceBase):
         if not any(0x380 <= _r[0] <= 0x3FF and len(_r[1]) >= 8 for _r in records):
             return None
         now = time.monotonic()
+        # 【2026-11-09】发布钳制的时基必须用日志时间而非墙钟: 回放/离线全速跑时
+        #   墙钟间隔≈0, 包络 dt 被 clamp 到下限 → 真实高速接近被人为卡住。
+        #   实车日志时间≈墙钟, 行为不变。
+        try:
+            _log_t = float(can_strings[0][0]) / 1e9
+        except (TypeError, ValueError, IndexError):
+            _log_t = now
         v_ego = self.v_ego if hasattr(self, 'v_ego') else 0.0
 
         self._pts_cache.clear()
@@ -1806,7 +1831,28 @@ class RadarInterface(RadarInterfaceBase):
             _v_out_prev = self._song_plus_vrel_out.get(track_id, 0.0)
             vrel = float(max(min(vrel, _v_out_prev + SONG_PLUS_VREL_OUT_SLEW),
                              _v_out_prev - SONG_PLUS_VREL_OUT_SLEW))
+            # 【2026-11-09 vRel 输出斜率上限】OUT_SLEW 是每帧 m/s, 对"连续多帧同向假趋势"
+            #   (差分/b6 毒化数帧) 等效斜率 18 m/s², 拦不住 → 按时间再限一道加速度包络。
+            #   时间锚=上次发布时刻 (含保留循环衰减写入, 见 _song_plus_vrel_out 同步处)。
+            _v_out_t = self._song_plus_vrel_out_t.get(track_id, _log_t)
+            _dt_v = min(max(_log_t - _v_out_t, 0.05), 0.3)
+            vrel = float(max(min(vrel, _v_out_prev + SONG_PLUS_VREL_OUT_ACC * _dt_v),
+                             _v_out_prev - SONG_PLUS_VREL_OUT_ACC * _dt_v))
             self._song_plus_vrel_out[track_id] = vrel
+            self._song_plus_vrel_out_t[track_id] = _log_t
+            # 【2026-11-09 dRel 发布包络】距离变化超出 |vRel|×dt+量化余量 = 量测错误
+            #   (串槽/重聚类/假接近), 截断发布。hist/差分已用原始量测 (1574 行先 append),
+            #   故这里只改发布链 (聚类中心 new_tracks 与 pt.dRel 均取本变量), 真值恢复
+            #   自动回正。⚠️ 不做横向豁免: 弯道真实斜距 dRel 变化仅 ~0.01m/帧
+            #   (v·y/R), 而 |Δy|>1m 几乎全是 b5 毛刺帧 —— 豁免恰好放行最毒的帧。
+            #   新 track 无锚 → 首帧不限。dt 用日志时间 (见 _log_t 注释)。
+            _d_out = self._song_plus_dout.get(track_id)
+            if _d_out is not None:
+                _dt_d = min(max(_log_t - _d_out[2], 0.01), 0.3)
+                _d_env = max(SONG_PLUS_DREL_ENV_MIN, abs(vrel) * _dt_d + SONG_PLUS_DREL_ENV_PAD)
+                if abs(dist - _d_out[0]) > _d_env:
+                    dist = _d_out[0] + (_d_env if dist > _d_out[0] else -_d_env)
+            self._song_plus_dout[track_id] = (dist, yrel, _log_t)
             # 高速静态物过滤 (借鉴 MR76 STATIONARY_OBJ_VREL, 2026-08-20):
             # 本车高速时, 车道外(|yrel|>2.5m)且差分 vRel 判为静止(vLead≈0) 的目标 = 护栏/路牌/隔离带。
             # 剔除: 不写聚类中心(不再参与关联)/不写 pts(不输出绿框), 防车道边静态物周期性抢 trackId。
@@ -1895,6 +1941,8 @@ class RadarInterface(RadarInterfaceBase):
                 self._song_plus_last_t.pop(tid, None)
                 self.vrel_filters.pop(tid, None)
                 self._song_plus_vrel_out.pop(tid, None)
+                self._song_plus_vrel_out_t.pop(tid, None)   # 2026-11-09 斜率时间锚同步清理
+                self._song_plus_dout.pop(tid, None)          # 2026-11-09 dRel 包络锚同步清理
                 self._pts_not_seen.pop(tid, None)
                 self._song_plus_native_id.pop(tid, None)
                 self._song_plus_birth.pop(tid, None)
@@ -1912,6 +1960,8 @@ class RadarInterface(RadarInterfaceBase):
                     self._song_plus_last_t.pop(tid, None)
                     self.vrel_filters.pop(tid, None)
                     self._song_plus_vrel_out.pop(tid, None)
+                    self._song_plus_vrel_out_t.pop(tid, None)   # 2026-11-09 斜率时间锚同步清理
+                    self._song_plus_dout.pop(tid, None)          # 2026-11-09 dRel 包络锚同步清理
                     self._pts_not_seen.pop(tid, None)
                     self._song_plus_native_id.pop(tid, None)
                     self._song_plus_birth.pop(tid, None)
@@ -1932,6 +1982,8 @@ class RadarInterface(RadarInterfaceBase):
                     if tid in self.pts:
                         self.pts[tid].vRel = vrel_decay
                         self._song_plus_vrel_out[tid] = vrel_decay  # 限变锚点跟随衰减, 防重逢首帧从旧值放行
+                        self._song_plus_vrel_out_t[tid] = _log_t    # 2026-11-09 斜率时间锚同步 (日志时基)
+                        # _song_plus_dout 锚保留旧 d (dRel 不衰减, 保留值原样发布, 包络口径一致)
                         # vLead/aLead: 现代 RadarPoint 只有 dRel/yRel/vRel/trackId,
                         # 这两个字段不存在 (2026-11-01 审核, 写入即 AttributeError 崩 card)。
                         # vLead 可由 vRel+vEgo 在消费端推出; aLead 已在 radard 侧由差分计算。
@@ -1960,6 +2012,8 @@ class RadarInterface(RadarInterfaceBase):
                 self._song_plus_last_t.pop(k, None)
                 self.vrel_filters.pop(k, None)
                 self._song_plus_vrel_out.pop(k, None)   # 输出限变锚点同步清理
+                self._song_plus_vrel_out_t.pop(k, None)  # 2026-11-09 斜率时间锚同步清理
+                self._song_plus_dout.pop(k, None)        # 2026-11-09 dRel 包络锚同步清理
                 self._pts_not_seen.pop(k, None)
                 self._song_plus_native_id.pop(k, None)   # 同步清理原生航迹ID缓存, 防无限增长
                 self._song_plus_birth.pop(k, None)       # 揭示期判龄缓存, 同步清理
@@ -1981,6 +2035,8 @@ class RadarInterface(RadarInterfaceBase):
                     self._song_plus_last_t.pop(k, None)
                     self.vrel_filters.pop(k, None)
                     self._song_plus_vrel_out.pop(k, None)  # 输出限变锚点同步清理
+                    self._song_plus_vrel_out_t.pop(k, None)  # 2026-11-09 斜率时间锚同步清理
+                    self._song_plus_dout.pop(k, None)        # 2026-11-09 dRel 包络锚同步清理
                     self._pts_not_seen.pop(k, None)  # 删 pts 时同步删键, 防 trackId 自增致字典无限增长
                     # 【2026-10-22 审计修复 M3】原生航迹 ID 缓存同步清理。
                     #   MAX_OBJECTS 截断路径已加, 但 stale 清理路径漏了 → 长时间行驶
