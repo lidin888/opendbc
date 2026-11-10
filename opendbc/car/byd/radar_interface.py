@@ -237,6 +237,31 @@ SONG_PLUS_VREL_OUT_ACC = 10.0     # 【2026-11-09 vRel 输出斜率上限 (按�
                                   #   这里按 dt 限加速度 |ΔvRel|≤ACC×dt (每帧≈0.69 m/s @0.069s)。
                                   #   真急刹前车 aRel≈-4 放行无阻; 假趋势被压平。10 留裕量
                                   #   (8 会在前车 -8 急刹时拖慢 ~0.3s)。与 OUT_SLEW 串联, 只限发布值。
+SONG_PLUS_BIRTH_CONFIRM = 5      # 【2026-11-10 出生确认门 (ARS510 项目 acc profile / Toyota valid_cnt 同款)】
+                                  #   新 track 被轮询匹配满 5 次 (~0.35s @14.5Hz) 才开始发布。
+                                  #   动机 (11-10 07:14 实车实锤): 新 track tid408 出生即假接近 (出生
+                                  #   vRel-3.3、dRel 29.2→8.5 爬行 2.6s) → aTarget -3.50 满刹后 track
+                                  #   消失、真前车在 25.9m。发布层包络只能"爬行减速"不能"断供"，
+                                  #   radard sane 门(4m/s)拦中后段——出生期前 0.35s 直接不发布，
+                                  #   radard 端 sticky 保持旧真前车，假 track 根本进不了 MPC。
+                                  #   真 cut-in 代价: 响应延迟 0.35s (TTC 4s 损 ~8%)。
+                                  #   ⚠️ 不能在出生期"判死": radar_interface 无视觉, 真快速接近(-8m/s
+                                  #   直道急刹前车)与假接近的 5 帧累计漂移无法区分(2.8 vs 2.75m),
+                                  #   判死会漏刹——只能延迟发布, 最终裁决留给 radard 的视觉验证。
+SONG_PLUS_B7_ZERO_S = 2.0        # 【2026-11-10 b7 幽灵断供 (雷达固件自报确认标志)】
+                                  #   sub2.b7 = 雷达内部跟踪年龄 (秒, 出生 0 起 ~+1/s, 256 回绕)。
+                                  #   86 个生命周期实测: 正常跟踪 55 段全部 0/1 起步递增;
+                                  #   sub3.b5 状态码 128(新/过渡)→129(稳定) 与 b7 同步转正。
+                                  #   408 案例 (07:14 满刹元凶): 出生假接近 2.6s 期间 b7 全程恒 0
+                                  #   —— 雷达从未确认它, 但对象列表一直报假距离。
+                                  #   断供判据 (双条件, 缺一不可):
+                                  #     ① b7 == 0 持续 ≥ 2.0s (雷达迟迟不确认——3 天数据 p50 确认
+                                  #        0.6-1.0s, 2s 未确认已异常; 单独漂移条件对"从远出生一路
+                                  #        接近的真前车"失效——上一版误杀实锤, 见 git 历史)
+                                  #     ② 发布后累计漂移 |dist - 发布时距离| > 6.0m
+                                  #   408: 2.7s 恒 0 + 19m 漂移 → 命中; 确认快的目标 (p50 0.6s) 永不
+                                  #   触发; 漂移小的未确认目标 (164.2 型 1.9m) 不触发。
+                                  #   b7 转正 (age>0) → 立即恢复发布 (雷达确认即信任)。
 SONG_PLUS_DREL_ENV_MIN = 0.35     # 【2026-11-09 dRel 发布包络 (下限)】每 track 相邻两次发布允许的
 SONG_PLUS_DREL_ENV_PAD = 0.30     #   最大 |ΔdRel| = max(ENV_MIN, |vRel_out|×dt + ENV_PAD)。
                                   #   动机 (11-09 21:10 实测): tid435 假接近 — dRel 56.6→42.2 持续
@@ -867,6 +892,9 @@ class RadarInterface(RadarInterfaceBase):
         self.last_valid_long: Dict[int, float] = {}
         self.vrel_filters: Dict[int, LowPassFilter] = {}
         self._song_plus_vrel_out: Dict[int, float] = {}   # 输出 vRel 帧间限变锚点 (2026-11-04)
+        self._song_plus_birth_cnt: Dict[int, int] = {}    # 出生确认计数 (2026-11-10, SONG_PLUS_BIRTH_CONFIRM)
+        self._song_plus_b7_zero_t: Dict[int, Optional[float]] = {}  # b7==0 的起始时刻 (None=b7>0 已确认)
+        self._song_plus_pub_d: Dict[int, float] = {}      # 首次发布时的距离 (幽灵断供漂移基准)
         self._song_plus_vrel_out_t: Dict[int, float] = {}  # vRel 斜率上限的时间锚 (2026-11-09)
         self._song_plus_dout: Dict[int, tuple] = {}        # dRel 发布包络锚 (d, y, t) (2026-11-09)
         self._song_plus_birth: Dict[int, float] = {}      # track 创建时刻 (2026-11-04 揭示期判龄)
@@ -1869,6 +1897,34 @@ class RadarInterface(RadarInterfaceBase):
             # 补全聚类中心 (含速度用于下一帧预测匹配; slot 用于 FIX1 同槽优先关联)
             new_tracks[track_id] = (dist, yrel, vrel, now, slot, yv_rel)
 
+            # 【2026-11-10 出生确认门】新 track 前 SONG_PLUS_BIRTH_CONFIRM 次轮询只积累
+            #   不发布 (聚类中心照写保证关联连续, pts 不写 → radard 看不到 → sticky 保持
+            #   旧真前车)。动机与"不能判死"的原因见 SONG_PLUS_BIRTH_CONFIRM 注释。
+            # 【2026-11-10 b7 幽灵断供】所有匹配帧都更新 b7=0 持续计时 (出生期也计);
+            #   b7>0 (雷达确认) → 清计时并立即视为可信。
+            _s2f_own = frame_map.get(0x380 + 4 * slot + 2)
+            _b7v = _s2f_own[7] if (_s2f_own is not None and len(_s2f_own) >= 8) else None
+            if _b7v == 0:
+                if track_id not in self._song_plus_b7_zero_t:
+                    self._song_plus_b7_zero_t[track_id] = _log_t
+            else:
+                self._song_plus_b7_zero_t.pop(track_id, None)   # 雷达确认 → 恢复可信
+            self._song_plus_birth_cnt[track_id] = self._song_plus_birth_cnt.get(track_id, 0) + 1
+            if self._song_plus_birth_cnt[track_id] < SONG_PLUS_BIRTH_CONFIRM:
+                self._pts_cache.pop(track_id, None)
+                continue
+            # 首次发布记录漂移基准 (b7 断供的漂移从发布点起算——出生距离对"从远出生
+            # 一路接近的真前车"会把接近本身当漂移, 上一版误杀实锤, 见 git 历史)
+            if track_id not in self._song_plus_pub_d:
+                self._song_plus_pub_d[track_id] = dist
+            # 双条件幽灵断供: b7==0 持续 ≥2s 且 发布后漂移 >6m
+            _z7 = self._song_plus_b7_zero_t.get(track_id)
+            _pd0 = self._song_plus_pub_d[track_id]
+            if (_z7 is not None and _log_t - _z7 >= SONG_PLUS_B7_ZERO_S
+                    and abs(dist - _pd0) > 6.0):
+                self._pts_cache.pop(track_id, None)
+                continue
+
             if track_id not in self._pts_cache:
                 self._pts_cache[track_id] = structs.RadarData.RadarPoint()
                 self._pts_cache[track_id].trackId = track_id
@@ -1946,6 +2002,9 @@ class RadarInterface(RadarInterfaceBase):
                 self._pts_not_seen.pop(tid, None)
                 self._song_plus_native_id.pop(tid, None)
                 self._song_plus_birth.pop(tid, None)
+                self._song_plus_birth_cnt.pop(tid, None)   # 2026-11-10 出生确认计数同步
+                self._song_plus_b7_zero_t.pop(tid, None)    # 2026-11-10 幽灵断供同步清理
+                self._song_plus_pub_d.pop(tid, None)          # 2026-11-10 幽灵断供漂移基准同步清理
                 self._song_plus_expiring.pop(tid, None)
                 continue
             if tid not in new_tracks:
@@ -1965,6 +2024,9 @@ class RadarInterface(RadarInterfaceBase):
                     self._pts_not_seen.pop(tid, None)
                     self._song_plus_native_id.pop(tid, None)
                     self._song_plus_birth.pop(tid, None)
+                    self._song_plus_birth_cnt.pop(tid, None)   # 2026-11-10 出生确认计数同步
+                    self._song_plus_b7_zero_t.pop(tid, None)    # 2026-11-10 幽灵断供同步清理
+                    self._song_plus_pub_d.pop(tid, None)          # 2026-11-10 幽灵断供漂移基准同步清理
                     self._song_plus_expiring.pop(tid, None)
                     continue
                 if now - pos[3] <= _hold:
@@ -2017,6 +2079,9 @@ class RadarInterface(RadarInterfaceBase):
                 self._pts_not_seen.pop(k, None)
                 self._song_plus_native_id.pop(k, None)   # 同步清理原生航迹ID缓存, 防无限增长
                 self._song_plus_birth.pop(k, None)       # 揭示期判龄缓存, 同步清理
+                self._song_plus_birth_cnt.pop(k, None)   # 2026-11-10 出生确认计数同步
+                self._song_plus_b7_zero_t.pop(k, None)    # 2026-11-10 幽灵断供同步清理
+                self._song_plus_pub_d.pop(k, None)          # 2026-11-10 幽灵断供漂移基准同步清理
                 self._song_plus_expiring.pop(k, None)    # 130 收尾标记, 同步清理
 
         # 更新帧间聚类中心 (供下一帧关联)
@@ -2043,6 +2108,9 @@ class RadarInterface(RadarInterfaceBase):
                     #   trackId 自增致 _song_plus_native_id 无界增长 (内存泄漏)。
                     self._song_plus_native_id.pop(k, None)
                     self._song_plus_birth.pop(k, None)   # 揭示期判龄缓存, 同步清理 (M3 同款)
+                    self._song_plus_birth_cnt.pop(k, None)   # 2026-11-10 出生确认计数同步
+                    self._song_plus_b7_zero_t.pop(k, None)    # 2026-11-10 幽灵断供同步清理
+                    self._song_plus_pub_d.pop(k, None)          # 2026-11-10 幽灵断供漂移基准同步清理
                     self._song_plus_expiring.pop(k, None)  # 130 收尾标记, 同步清理
 
         self.pts.update(self._pts_cache)
