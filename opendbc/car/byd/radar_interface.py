@@ -965,8 +965,11 @@ class RadarInterface(RadarInterfaceBase):
         if self.rcp is None:
             return super().update(None)
 
-        # 使用单调时钟
-        current_ts = time.monotonic()
+        # 【2026-11-10 时基统一】优先日志时间 (回放可复现), 实车 fallback 墙钟
+        try:
+            current_ts = float(can_strings[0][0]) / 1e9
+        except (TypeError, ValueError, IndexError):
+            current_ts = time.monotonic()
 
         values = self.rcp.update(can_strings)
         if self.is_mrr_direct:
@@ -1341,7 +1344,15 @@ class RadarInterface(RadarInterfaceBase):
         # 生产语义: 无雷达帧 = 无新目标, radard 侧 tracks 自然老化)。
         if not any(0x380 <= _r[0] <= 0x3FF and len(_r[1]) >= 8 for _r in records):
             return None
-        now = time.monotonic()
+        # 【2026-11-10 时基统一】内部时间全部用日志时间 (logMonoTime):
+        #   回放/离线全速跑时墙钟间隔≈0 → 差分/长窗/关联预测全部失效 (回放与实车行为
+        #   不一致的根因)。logMonoTime 与 monotonic 在实车差固定偏移 → 窗口差值等价,
+        #   实车行为不变; 回放则可复现。
+        try:
+          _log_t = float(can_strings[0][0]) / 1e9
+        except (TypeError, ValueError, IndexError):
+          _log_t = time.monotonic()
+        now = _log_t
         # 【2026-11-09】发布钳制的时基必须用日志时间而非墙钟: 回放/离线全速跑时
         #   墙钟间隔≈0, 包络 dt 被 clamp 到下限 → 真实高速接近被人为卡住。
         #   实车日志时间≈墙钟, 行为不变。
@@ -2155,7 +2166,15 @@ class RadarInterface(RadarInterfaceBase):
         if not can_strings or not isinstance(can_strings[0], tuple) or len(can_strings[0]) < 2:
             return False
         records = can_strings[0][1]
-        now = time.monotonic()
+        # 【2026-11-10 时基统一】内部时间全部用日志时间 (logMonoTime):
+        #   回放/离线全速跑时墙钟间隔≈0 → 差分/长窗/关联预测全部失效 (回放与实车行为
+        #   不一致的根因)。logMonoTime 与 monotonic 在实车差固定偏移 → 窗口差值等价,
+        #   实车行为不变; 回放则可复现。
+        try:
+          _log_t = float(can_strings[0][0]) / 1e9
+        except (TypeError, ValueError, IndexError):
+          _log_t = time.monotonic()
+        now = _log_t
         v_ego = self.v_ego if hasattr(self, 'v_ego') else 0.0
 
         # 取本帧所有 0x374 目标 (src=2, bus2; ChildID 分组), 更新累积缓存
