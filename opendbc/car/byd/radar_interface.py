@@ -133,7 +133,7 @@ def _tang_decode_yrel(dat: bytes) -> float:
 #    sub3.b2 = 内部年龄计数(出生起缓降, 消失后归 0, 无突变前兆值); 消失后 slot 回
 #    空闲填充(base tid15/dist255.9/sub3 state128)。清丢后 8~11s 总线才重报杂波串(已滤)。
 # =====================================================================
-SONG_PLUS_DREL_SCALE = 0.0625  # 距离 0.0625 m/LSB (特斯拉 LongDist 同)
+# (常量已删, 仅存档) 距离刻度 = 0.0625 m/LSB (特斯拉 LongDist 同), 已直接写进解码式。
 # 空槽/占位槽精确字节模板 (2026-10-21, 全 1950 万帧验证)
 SONG_PLUS_IDLE_TMPL = bytes.fromhex('ffffff3fffff')      # 无目标
 SONG_PLUS_FILL_TMPL = bytes.fromhex('fef71f400000')        # 127.875m 占位
@@ -176,20 +176,15 @@ SONG_PLUS_DREL_MAX = 250.0     # 有效距离上限 (m)
 # 【曲线和差/连续】最陡段 48~55m 斜率 -0.171, 差发放大 1.17x (旧表最陡 1.30x, 更平缓)。
 # ⚠️ 仍待卷尺 20/30/60m 三点最终确认; 与旧表的差异主要在 13~48m (新多减 0.9~3.7m)。
 # SONG_PLUS_DREL_ZERO_CODE/OFFSET_M 仅作文档记录, 实际使用下方 CURVE 数组。
-SONG_PLUS_DREL_ZERO_CODE = 59          # 零点码: code 59 对应 0m
-SONG_PLUS_DREL_OFFSET_M = 3.6875       # = 59*0.0625, 近段平台偏移(米)
+# (常量已删, 仅存档) 零点码 59; 近段平台偏移 3.6875m = 59*0.0625 —— 实际只用下方 CURVE 数组。
 SONG_PLUS_DREL_CURVE_X = (0.0, 48.0, 55.0, 70.0, 120.0)
 SONG_PLUS_DREL_CURVE_Y = (3.7,  3.7,  2.5,  1.2,   1.2)
-# 📏 b6 量程档收缩 (2026-09-20 全量交叉验证, 工具 tools/debug/fresh_step45/46):
-#   同一 raw 距离下, b6>=1 帧的 (raw-视觉) 偏置比 b6=0 帧小 0.3~0.6m —— 8-10m 净样本四象限:
-#   停b6=0 +2.40 / 动b6=0 +1.47 / 停b6>=1 +2.04 / 动b6>=1 +1.20 (n=17.8万, 单簇净匹配+2折交叉)。
-#   现值曲线按 b6=0(停稳)标定 → 对 b6>=1 帧系统性多扣 ~0.3m (8-12m 命中率下降)。
-#   修正: b6>=1 时在 6.5-12m 内收缩修正量 (峰值 0.35m), 其余距离保持现值。
-#   (>12m 的 b6 效应方向未定/含排队误配异常, 暂不动; 见 step45/46 记录)
-#   b6 = 同一 sub0 帧的 d[6] (量程档), 零成本; 仅影响宋Plus 0x380 解码路径。
-SONG_PLUS_DREL_B6_SHRINK_MAX = 0.35
-SONG_PLUS_DREL_B6_SHRINK_X = (0.0, 5.0, 6.5, 12.0, 15.0, 44.0)
-SONG_PLUS_DREL_B6_SHRINK_Y = (0.0, 0.0, 1.0, 1.0, 0.0, 0.0)
+# 📏【2026-11-13 废止 b6 量程档收缩】原 SONG_PLUS_DREL_B6_SHRINK_* (MAX=0.35, 6.5-12m
+#   收缩) 已删除。原因: sub0.b6 不是距离量程档, 是航迹状态字节 (bit7=段标志 + 生命周期
+#   阶段/存在概率)。实测 corr(b6,距离) 仅 +0.13 (量程档应强单调), corr(b6,state) -0.84;
+#   按 b6 分组的距离偏差 (视觉 lead 参考): b6=1(新建) -2.54m vs b6=2/3(成熟) +1.41/+1.58m
+#   —— 方向相反、幅度 7 倍于旧收缩。用状态字节当量程档做距离修正 = 铁律 5 违例。
+#   距离修正只走下方 SONG_PLUS_DREL_CURVE (纯距离偏差曲线)。
 SONG_PLUS_VREL_WIN = 0.5       # 每目标距离差分窗口 (s); 0.1s 时相邻帧 vRel 跳变均值 0.231m/s,
                                # 0.3s 降到 0.095, 0.5s 更稳 (回放 seg40 实测 + 2026-08-15 内证法回归验证)
 SONG_PLUS_VREL_WIN_YOUNG = 0.25  # 【2026-11-04 揭示期】出生 <1s track 的短窗差分窗 (s)。
@@ -258,8 +253,9 @@ SONG_PLUS_DREL_ENV_PAD = 0.30     #   最大 |ΔdRel| = max(ENV_MIN, |vRel_out|�
                                   #   包络只截发布值; hist/差分用原始量测, 真值恢复自动回正。
                                   #   差分窗内横向大移 (|Δy|>SONG_PLUS_VREL_MAX_DY) 帧豁免 (斜距几何)。
 # ---- b6 精细接近率落地参数 (2026-09-20; 换算函数与 selfdrive/debug/byd_radar_speed_probe.py 同源) ----
-# ⚠️ 命名消歧: 本块的"b6"= 速度槽 0x3C8+g 第7字节(接近率编码);
-#    上方 SONG_PLUS_DREL_B6_SHRINK 的"b6"= 目标 sub0 帧第7字节(距离量程档) —— 两个完全不同的量。
+# ⚠️ 命名消歧: 本块的"b6"= 速度槽 0x3C8+g 第7字节 (质量/置信度, ⇔ b7.bit0, corr -0.998,
+#    **不是速度** —— 真实速度是同帧 11 位字段 b2|(b3&0x07)<<8);
+#    目标 sub0 帧第7字节也叫"b6" = 航迹状态字节 (生命周期/置信度, 非量程档)。
 # 0x3C8+g.b6 (g=0~3) ↔ 目标槽 g 一对一 (4x4 对角矩阵验证)。
 # 2026-09-22 重标定 (宋21 新日志 .comma(1) 41 段 / 4.5 万配对帧 + 750 段轨迹积分, 双真值交叉):
 #   k=6.5 (旧 7, 半档零点): 旧口径全域 bias -0.52m/s → k=6.5 后 bias≈0 (差分/视觉两口径一致)
@@ -335,48 +331,22 @@ SONG_PLUS_VREL_B6_FUSE_BETA = 0.10   # 2026-11-06 离线标定 (1298 样本, 视
 #   反而变差** (MAE 0.357/0.406) → 0.08 是已验证的最优档, 勿再往下压。
 SONG_PLUS_VREL_B6_FUSE_BETA_NEW = 0.05   # 2026-11-06 同步下调 (新目标更信差分)
 SONG_PLUS_VREL_B6_FUSE_B7_MAX = 8      # b7 < 此值 = 新目标 → 用 BETA_NEW
-SONG_PLUS_VREL_B6_K = 6.5           # 零点偏移 (b6=-6.5 ↔ vRel≈0; 半档结构)
-SONG_PLUS_VREL_B6_C6 = ((75.0, 36.0), (1e9, 88.0))   # <75m 统一 36 (A/B 实测 50-75m C=36 有效, 见 MAX_DREL 注释)
-
-
-def _song_plus_c6(d: float) -> float:
-  """C(d) 查表: 与全量标定/probe 工具逐字一致。"""
-  for lim, c in SONG_PLUS_VREL_B6_C6:
-    if d < lim:
-      return c
-  return SONG_PLUS_VREL_B6_C6[-1][1]
+# (已删 2026-11-13) 原 SONG_PLUS_VREL_B6_K / _B6_C6 / _song_plus_c6():
+#   b6 时代的换算表 vRel=-(b6+6.5)*d/C(d)。b6 已证不是速度(见上), 表与函数一并删除;
+#   现行速度只走 0x3C8+g 的 11bit 多普勒 (SONG_PLUS_VREL_V11_*)。勿按 b6 重建。
 
 
 
-def _song_plus_crc_ok(d) -> bool:
-    """b0 = CRC8/J1850 (poly 0x1D, init/xorout 0xFF, MSB first) over d[1:8]。"""
-    crc = 0xFF
-    for b in d[1:8]:
-        crc = _SONG_PLUS_CRC_TAB[crc ^ b]
-    return (crc ^ 0xFF) == d[0]
+# (已删 2026-11-13) 原 _song_plus_crc_ok(): 引用未定义的 _SONG_PLUS_CRC_TAB (F821),
+#   一旦被调用就 NameError; 且目标解析路径本就不做 CRC 过滤(防回归)。需要时按此重建:
+#     b0=CRC8/J1850, poly 0x1D, init 0xFF, xorout 0xFF, MSB first, 覆盖 d[1:8]
+#     crc=0xFF; for b in d[1:8]: crc=TAB[crc^b]; ok=(crc^0xFF)==d[0]
 
 
-# ---- 粗接近率 sub2.b2 兜底通道 (2026-09-22 接入; 仅 b6 不可用时使用) ----
-# 每个目标槽的 sub2 帧 (0x382+4g) 的 b2 = 粗接近率 15 档, 与 b6 同向 (b2 大=更接近):
-#   0 = 饱和档 (不接近/远离, 占 real 帧 ~50%); 1~14 = 接近, 每档 v/d ≈ -0.0136;
-#   255 = 空槽 fill 标记 (97%+, 必须排除, 防污染缓存)。
-# 换算 (2026-09-22 低噪声滑窗真值标定: 宋21 41 段 3691 窗 + 分槽验证):
-#   vRel ≈ -d*(b2-0.05)/74 (b2>=1); 由 g0 分箱两端推: b2=1→v/d -0.0129, b2=9→-0.1213
-#   ⚠️ b2=0 是饱和档 (不接近, v/d≈+0.012~+0.02), 不在线性延长线上, 不能用它定零点。
-#   g0 窗级 MAE ~1.9 (比 b6 粗 2~3 倍), 但**覆盖全部槽** (含 g20/g21/g22 低频槽;
-#   帧级相关 g0 -0.60 / g1 -0.55 / g2 -0.51 / g3 -0.28 / g20 -0.26)。
-#   b2 值域实测到 26 (15~26 占 7.7%, 与 v/d 继续单调 → 线性外推有效); b2=0 占 ~50%。
-#   → 只在 b6 不可用 (无缓存/过期/>50m) 时兜底, 不替代 b6; 强接近 (v<-3) 沿用 0.7 保守偏置
-#     (该段实测低估 0.6~2.0 m/s; 轻接近段有 ~14% 方向误报, 属粗通道固有, 仅在 b6 缺失时暴露)。
-SONG_PLUS_VREL_B2_C0 = 0.05
-SONG_PLUS_VREL_B2_C1 = 74.0
-
-
-def _song_plus_v_from_b2(b2: int, d: float) -> float:
-  """粗接近率 → vRel [m/s]; b2=0(饱和)/255(空槽)/非法 d → nan (不使用)。"""
-  if b2 < 1 or b2 >= 255 or d < 0.5:
-    return float('nan')
-  return -d * (b2 - SONG_PLUS_VREL_B2_C0) / SONG_PLUS_VREL_B2_C1
+# (已删 2026-11-13) sub2.b2 粗接近率通道 (SONG_PLUS_VREL_B2_C0/C1 + _song_plus_v_from_b2)。
+#   2026-09-22 曾作为 b6 的兜底, 2026-10-03 全域复核证伪: b2 是每槽 tracker 状态量,
+#   零点非 0.05 (实测 8.5)、1~15 低域非单调、槽内换目标后还会秒级串位。
+#   现行速度链: 11bit 多普勒 → 差分, 没有 b2 这一路。
 # 【2026-11-08 修正 0.014 -> 0.002】b5 与 c144 必须自洽 (位关系 33x)。
 #   实测 2889 帧 (每帧最近目标 vs 车道线本车道中心):
 #     0.014       偏差中位 3.19m  车道内 18.0%  严重越界 67.5%   ← 错 7 倍
@@ -404,7 +374,7 @@ SONG_PLUS_YREL_SCALE = 0.014   # 方位角 scale (rad/LSB): y = scale * d * (b5 
 #   实测例 (同目标 107→110m 连续 12 帧): 旧 b5 卡在 94 (y -1.51→-1.55 看不出移动),
 #     新 c144 1005→1000 (y -1.76→-2.04 平滑漂移) —— 近距角度量化吞掉的横向移动被解出。
 #   同族三个副本 bit19|11 / bit144|11 / bit155|11 互相关 0.99, 取 144|11。
-SONG_PLUS_YREL_FINE_ZERO = 900        # 11 位字段的零点码
+# (常量已删, 仅存档) YREL_FINE_ZERO = 900 —— c144 交叉校验已整块删除, 该组常量无使用者。
 # 【2026-11-11 刻度重标定+语义修正】scale->0.00001, zero->900 (横向误差 63.6cm->4.8cm, 13 倍)。
 #   【语义修正】c144 不是全 FOV 横向字段 —— 三模型对比 (角度tan 4.8cm / 直接横向 11.4cm /
 #   官方sin 240cm) 确认 c144 = 小角度精测 (表达范围 ±0.66°, 30m 处 ±0.35m); 全 FOV 横向
@@ -424,11 +394,11 @@ SONG_PLUS_YREL_FINE_ZERO = 900        # 11 位字段的零点码
 #   正确刻度 0.000061 使 c144 与 b5 一致 (MAE 0.161m), 且 b5/c144 刻度比 = 0.002/0.000061 = 33
 #   (正是"33x 细"的来历)。旧值 0.00042 比值仅 4.8。
 #   零点 1044 不变 (全量拟合 MAE 0.161m, 优于 zero=1200 的 0.390m)。
-SONG_PLUS_YREL_FINE_SCALE = 0.00001   # rad/LSB (2026-11-11 重标定; c144=小角度精测字段 ±0.66°, 旧 0.000061 大 6 倍)
+# (常量已删, 仅存档) YREL_FINE_SCALE = 0.00001 rad/LSB (c144 小角度字段 ±0.66°; 更早还用过 0.000061/0.00002)
 # 交叉校验门 (2026-10-22 上车前审计): 精细值与 b5 粗值的最大允许差。
 #   实测 |y_fine − y_b5| 分布 (67,972 样本): p50=0.47 p90=1.40 p95=1.71 p99=2.25
 #   → 2.0m 覆盖 ~98.5%, 超过即判 sub3 错帧/别名, 退 b5。
-SONG_PLUS_YREL_FINE_XCHECK_M = 2.0
+# (常量已删, 仅存档) YREL_FINE_XCHECK_M = 2.0 m (b5 粗值与 c144 精值的交叉校验门)
                                # 2026-08-14 commalog0811 实测锁定: 视觉|y|>3m大横向+距离匹配3m内 9样本, 中位 res=0.798°/LSB (0.014rad/LSB),
                                # 7/9 样本集中在 0.69~1.06°/LSB。原 0.002 (0.115°/LSB) 小7倍 → 横向被压缩 → "绿框挤一坨"
 SONG_PLUS_YREL_OFFSET = 95.0   # 方位角 offset (b5=95 → 正前方 0°)。2026-08-15 视觉标定修正:
@@ -438,15 +408,16 @@ SONG_PLUS_YREL_OFFSET = 95.0   # 方位角 offset (b5=95 → 正前方 0°)。20
 SONG_PLUS_YREL_B5_MIN = 10     # b5 有效范围下限。左侧大角度真实目标最低 b5=10(slot1)/14(tid3);
                                # 原[78,108]过滤把左侧大角度车(b5<78)全丢了 → 路测"左边车没绿框"
 SONG_PLUS_YREL_B5_MAX = 124    # b5 有效范围上限。b5=192 是远距轮询槽(0x3C8)无方位角默认值, 必须排除
-SONG_PLUS_YREL_ANGLE_RES = 0.002 * 57.2958  # 角度分辨率 ≈0.115°/LSB (2026-11-08 随 SCALE 修正)
+# (常量已删 2026-11-13) 角度分辨率 = SONG_PLUS_YREL_SCALE*57.2958 = 0.802°/LSB。
+#   旧值 0.002*57.2958=0.115° 是 11-08 那次误标定的残留, 与现行 SCALE 差 7 倍。
 # ---- sub1.b6 横移档位 → 横向速度 (2026-10-03 新解, 帧级分箱标定; 零点 125, 饱和 ≈±3m/s) ----
-SONG_PLUS_YVREL_ZERO = 125     # 中性值 (占 32% 帧) —— 笔记曾误把 125 当"近常量填充"
+# (常量已删, 仅存档) yvRel 零点 = 125 (占 32% 帧), 直接写在解码式里。
 # 【2026-11-06 刻度修正】0.25 -> 0.028 m/s per count (8839 样本: 自由拟合 0.02838, MAE 0.047;
 #   分箱 b6=115→yvRel -0.266 / 125→0 / 135→+0.281, 零点 125 吻合)。旧值 0.25 放大 8.9 倍。
 #   注: RadarPoint.yvRel 在 car.capnp 的 deprecated :group 里 → 上游弃用, 不对外输出;
 #     yv_rel 仅用于 radar 内部 track 关联预测 (见 pred_y)。
 SONG_PLUS_YVREL_PER_COUNT = 0.028  # m/s per count (2026-11-06 标定; 旧 0.25 错 8.9 倍)
-SONG_PLUS_YVREL_MAX = 3.0      # m/s 饱和限 (两侧档位实测饱和在 ±3 附近)
+# (常量已删, 仅存档) yvRel 饱和 = ±3.0 m/s (两侧档位实测), 直接写在解码式里。
 
 
 def _song_plus_fit_win(hist, now, win):
@@ -568,9 +539,20 @@ SONG_PLUS_ALEAD_MIN_PTS = 6      # 最少样本 (1.6s×14.4Hz≈23; 轮询缺口
 SONG_PLUS_ALEAD_MIN_SPAN = 0.5   # 窗内最小时间跨度 (s), 不够不拟合
 SONG_PLUS_ALEAD_MAX_RMS = 0.15   # 拟合残差门 (m): 超此 = 目标切换/几何污染 → 放弃(置0)
 SONG_PLUS_ALEAD_MAX_DY = 1.0     # 窗内横向漂移门 (m): 换道目标纵向投影失真 → 放弃
-SONG_PLUS_ALEAD_CLAMP = (-4.0, 2.0)  # 值域保护 (m/s²): 负向留真实急刹余量, 正向收紧(乐观方向风险高)
+# (常量已删 2026-11-13) 原设计值域保护 (-4.0, +2.0) m/s² —— **从未接入** _song_plus_fit_alead
+#   的返回处。若要启用需在 fit 出口 clamp; 当前 aLead 由 radard 侧自行限幅。
 
 SONG_PLUS_TRACK_TIMEOUT = 0.5   # 【2026-11-08 2.0->0.5】帧间关联: 旧 track 保留超时 (s)。
+SONG_PLUS_NEAR_HOLD = 2.0       # 【2026-11-13】本车道近距目标 (|y|<1, 0.75<d<25) 的 130 收尾保留。
+SONG_PLUS_NEAR_HOLD_CREEP = 0.8 # 【2026-11-13】同一批目标在**蠕行**(0.5<=vEgo<3)时的保留窗。
+                                #   实锤 seg15 t=931.25~931.75: 本车道停止目标消失 0.6s,
+                                #   0.35s/0.5s 收尾都留不住 → lead 瞬切邻车道 (y=±3.5) 3 帧。
+                                #   取 0.8s 恰好覆盖 0.6s 空洞, 又不至于像 2s 那样把旧值留太久。
+                                #   0.5s 全局超时对它们不够: 停止/排队目标被槽位重排时 state 短暂
+                                #   打 130, 雷达还会连续几帧把 b5 打成 30~31 (重捕获噪声, |yrel|>10
+                                #   被丢) → 点从流里消失 0.6s+。实锤 .comma25 seg15 23:27 #27:
+                                #   930.8 后 slot0 的车 b5 94→30, 点被当噪声丢, 0.5s 后删点。
+                                #   代价方向不对称: 多留 1.5s 可能多一次轻刹, 少留就是跟假 lead 撞上去。
                                 #   参考 ARS510 tracks.py: slot 静默 max_gap_s=0.3s 即判新目标。
                                 #   实测宋Plus 同一 native_id 更新间隔 中位 0.070s / P99 0.149s,
                                 #   >0.3s 仅 0.15% → 收紧到 0.5s 几乎不误伤正常目标。
@@ -1028,6 +1010,10 @@ class RadarInterface(RadarInterfaceBase):
         #   → is_mrr_direct 或 radar_no_valid 必为 True, 上面两条早返回已拦截。
         #   保留代码以防将来接非直解车型; 勿在此添加新逻辑 (跑了也没用)。
         #   附加: 此段的 KF 清理条件 age>1.5s 恒假 (kf.last_time 每帧刷新)。
+        #   ⚠️【2026-11-13 定稿】**这是死代码, 不要当活实现维护或调参**:
+        #     · 单测/回放都不会进入这里, 任何改动都无法通过数据验证;
+        #     · 将来真接非直推车型, 应按新车型报文重写, 而不是复用这里的 KF/触发帧逻辑;
+        #     · 本文件其余部分 (0x380 直解) 与这段没有任何共享状态, 删改互不影响。
         # ============================================================
         if self.trigger_msg not in values:
             # no radar in this frame
@@ -1381,8 +1367,7 @@ class RadarInterface(RadarInterfaceBase):
             _log_t = float(can_strings[0][0]) / 1e9
         except (TypeError, ValueError, IndexError):
             _log_t = now
-        v_ego = self.v_ego if hasattr(self, 'v_ego') else 0.0
-
+        # (2026-11-13 删除) 此处原有 `v_ego = self.v_ego ...`, 赋值后从未使用。
         self._pts_cache.clear()
         # 阶段1: 按地址收集帧 (base + sub3)
         frame_map = {}  # addr -> dat
@@ -1410,14 +1395,15 @@ class RadarInterface(RadarInterfaceBase):
                     _b6s = _b6r - 256 if _b6r >= 128 else _b6r
                     _sd = 0.0625 * (((d[3] & 0x0F) << 8) | d[2])
                     _is_fill = abs(_sd - 127.875) < 0.01 and (d[3] >> 4) == 15
-                    # 【2026-11-05 填充簇拒收】远距速度帧大量携带 b6=0xF9~0xFD (249~253,
-                    #   填充模板残留), 距离字段却是真实距离 → 上面 _is_fill 拦不住,
-                    #   有符号过滤也拦不住 (signed -7~-3 在 [-50,50] 内)。解码后 vRel 乱飞:
-                    #   249→+0.7m/s@50m (虚报远离→欠刹), 253→-4.8m/s@50m (虚报接近→过刹)。
-                    #   1a--6 实测两个方向都被毒化 (该时刻真差分≈-1.5, 实车 vRel=-4.5 过刹,
-                    #   基线回放 vRel=+0.7 欠刹)。拒绝 raw>=249 仅丢失 |v|<1.4·d/36 的
-                    #   "远离"方向 b6 数据 (非危险方向, 差分可覆盖)。
-                    if (not _is_fill) and d[2] != 0 and (d[3] >> 4) != 15 and -50 <= _b6s <= 50 and _b6r < 249:
+                    # 【2026-11-13 删除 _b6r<249 门】速度槽 b6 **不是速度** (旧注释"粗接近率"
+                    #   与"填充簇 249~253 残留"均错): 4 段 7976 条 REAL 记录实测 b6≥247 占
+                    #   90.0%、≤1 仅 3.2%; FILL 记录 b6=0 占 95.8% —— 方向与旧注释正好相反。
+                    #   且 2026-11-06 起缓存已存 11 位解码速度 (_v11, 不读 b6), 这道门是拿
+                    #   质量字段 (b6⇔b7.bit0, corr -0.998) 当速度筛 → 只保留 34.5% 真实速度
+                    #   记录, 强接近 (v<-3) 811 条丢 618 条 = 76% (危险方向=欠刹)。
+                    #   铁律 5: 字节语义纠正后, 基于它的过滤器必须重验 → 删除此门。
+                    #   _is_fill / d[2]!=0 / tid!=15 / |b6s|<=50 保留 (填充哨兵与值域保护)。
+                    if (not _is_fill) and d[2] != 0 and (d[3] >> 4) != 15 and -50 <= _b6s <= 50:
                         # b7 bit0 = 质量位 (10-03 实测: bit0=1 时 b6 误差翻倍 0.553→1.071 m/s,
                         # 占 real 帧 8.4%; bit1~7 恒 0) → 缓存里带质量标记, 使用端退差分。
                         # 【2026-11-05 补测】b7 是整帧测量质量位: 与距离抖动相关 +0.40 (四分带
@@ -1492,12 +1478,10 @@ class RadarInterface(RadarInterfaceBase):
             #   c144 字段保留解码但不再参与 yRel (下方代码注释保留, 待编码模型
             #   有独立真值标定后再评估启用)。
             yrel = SONG_PLUS_YREL_SCALE * dist_raw * (b5 - SONG_PLUS_YREL_OFFSET)   # 唯一横向来源
-            if False:   # 【2026-11-11 c144 禁用】原交叉校验逻辑保留备用
-                if sub3 is not None and len(sub3) >= 8:
-                    _c144 = int(sub3[2]) | ((int(sub3[3]) & 0x07) << 8)   # bit144|11 = sub3.b2 + sub3.b3低3位
-                    _yrel_fine = SONG_PLUS_YREL_FINE_SCALE * dist_raw * (_c144 - SONG_PLUS_YREL_FINE_ZERO)
-                    if abs(_yrel_fine - yrel) <= SONG_PLUS_YREL_FINE_XCHECK_M:
-                        yrel = _yrel_fine
+            # (已删 2026-11-13) 原 c144 交叉校验块 —— 2026-11-11 已用 `if False:` 停用, 现整块删除。
+            #   c144 的编码模型三次标定互相矛盾 (0.000061 / 0.00002 / 0.00001, 全部基于
+            #   "跟车 y 恒定" 假设, 弯道不成立), 近距旁车 (8.5°) 超出其 ±0.66° 表达范围会回绕。
+            #   若要重启用, 必须先有独立真值标定, 不能沿用任何历史 scale。
             # 横向物理上限 (2026-08-29, seg20 47.4s/58.5s 实测破解):
             # ① 目标消失前 0.2~0.3s 雷达内部重捕获噪声使 b5 单帧 95→31 跳变,
             #    yRel = 0.014*73*(31-95) ≈ -65m 假点会新建幽灵 track (id340) 污染关联 2s+;
@@ -1511,10 +1495,14 @@ class RadarInterface(RadarInterfaceBase):
             # 注意: np.interp 返回 numpy.float64, 直接赋给 capnp 字段(dRel)会抛
             # KjException(Tried to set field ... unsupported type numpy.float64) → card 崩溃,
             # 必须 float() 转回 Python 标量。2026-08-25 实测 crash, 根因确认。
-            # b6 量程档收缩 (见 SONG_PLUS_DREL_B6_SHRINK 注释; b6=d[6] 同一帧读取):
+            # 【2026-11-13 删除 b6 量程档收缩】sub0.b6 不是距离量程档, 是航迹状态字节
+            #   (bit7=段标志 + 已确认段=生命周期阶段 0-24 / 未确认段=距离相关 237-255)。
+            #   实测 corr(b6,距离) 仅 +0.13 (量程档应强单调), corr(b6,state) -0.84。
+            #   按 b6 分组的距离偏差 (视觉 lead 参考): b6=1(新建) -2.54m vs b6=2/3(成熟)
+            #   +1.41/+1.58m —— 方向相反、幅度 7 倍于旧收缩 (6-15m 恒 -0.35m)。
+            #   用状态字节当量程档做距离修正 = 铁律 5 违例 → 删除。距离只走
+            #   SONG_PLUS_DREL_CURVE (纯距离偏差曲线, 与 b6 无关)。
             corr = np.interp(dist_raw, SONG_PLUS_DREL_CURVE_X, SONG_PLUS_DREL_CURVE_Y)
-            if d[6] >= 1:
-                corr -= SONG_PLUS_DREL_B6_SHRINK_MAX * np.interp(dist_raw, SONG_PLUS_DREL_B6_SHRINK_X, SONG_PLUS_DREL_B6_SHRINK_Y)
             dist = float(dist_raw - corr)
             if dist < 0.5:
                 continue  # 修正后 <0.5m = 贴脸/噪声
@@ -1602,10 +1590,22 @@ class RadarInterface(RadarInterfaceBase):
             #   不是换目标。仅"ID 变化"就清历史会让差分持续无结论 → vRel=0 → 弯道漏刹。
             #   修正: ID 变化 且 距离也跳变 (>1.5m) 才判换目标重置; 距离连续 = 同一目标
             #   被重新编号, 保留差分历史 (仅更新存储的 nid)。
+            # 【2026-11-13 几何双跳变】实锤 (.comma25 seg15 23:27 #473): 排队停止目标被
+            #   槽位重排, 同一辆车以新 nid 在 slot0 复活, 距离阶跃 +1.75m 但横向连续 (b5
+            #   同值)。旧判据"距离跳>1.5m 即换目标"把它当新车 → 清差分历史 + 重出生门
+            #   → vRel=-0.5 假值 (真值 -2.2) → 规划器继续加速冲向停着的真车。
+            #   换目标 = 距离**和**横向都跳 (几何整体换了一台车); 只跳距离 = 同车测量
+            #   阶跃/重新编号, 承接历史。横向量化噪声 ±1m (70m 处 ±0.97m) 不触 1.5m 门。
             _hist_bt = self._song_plus_hist.get(best_track) if _matched else None
             _nid_d_jump = True
             if _hist_bt:
-                _nid_d_jump = abs(dist - _hist_bt[-1][1]) > 1.5
+                _d_jump = abs(dist - _hist_bt[-1][1])
+                _y_jump = abs(yrel - _hist_bt[-1][2])
+                # 护栏 (2026-11-13): 原判据要求"距离和横向都跳"才换车, 反向风险是
+                #   同车道前后两车在槽内替换、横向 <1.5m 时, 会把前车的历史速度带给后车。
+                #   加一条上限: 横向虽连续, 但距离跳 >6m (远超重编号的 +1.75m 阶跃,
+                #   也不是量化噪声 0.06m) → 仍判换车。
+                _nid_d_jump = ((_d_jump > 1.5 and _y_jump > 1.5) or _d_jump > 6.0)
             _native_replaced = (_matched and native_id >= 0
                                 and _prev_nid_of_best is not None and _prev_nid_of_best != native_id
                                 and _nid_d_jump)
@@ -1789,7 +1789,13 @@ class RadarInterface(RadarInterfaceBase):
                 if _c6 is not None and now - _c6[1] <= SONG_PLUS_VREL_B6_FRESH_S:
                     # 【2026-11-06】缓存存的是 11 位解码后的 m/s (见常量区), 直接用
                     v_b6 = float(_c6[0])
-                    if not _c6[2] or v_b6 < SONG_PLUS_VREL_B6_BIAS_V:
+                    # 【2026-11-13 读侧反转】旧式 `not _c6[2] or v_b6 < -3` 把 b7.bit0=1
+                    #   的帧判为可疑 → 而写侧 `_b6r<249` 只收 bit=1 的帧 → 缓存里 90% 的值
+                    #   只能靠"v_b6<-3 强接近"这一条出路 (删门 A/B 只动 0.1 m/s 的根因)。
+                    #   实测 (11 位速度): bit=1 侧 |err| 0.65 < bit=0 侧 0.84, bit=1 更准 →
+                    #   读侧应信任 bit=1。改为 `if _c6[2] or ...`: bit=1 帧恒用, bit=0 帧
+                    #   仅强接近时用。写侧 _b6r<249 门一并删除 (见上方缓存写入)。
+                    if _c6[2] or v_b6 < SONG_PLUS_VREL_B6_BIAS_V:
                         if v_b6 < SONG_PLUS_VREL_B6_BIAS_V:
                             v_b6 -= SONG_PLUS_VREL_B6_BIAS
                         v_b6 = max(min(v_b6, 30.0), -30.0)
@@ -1915,7 +1921,7 @@ class RadarInterface(RadarInterfaceBase):
                     _static_dropped.add(track_id)
                     continue
             # 补全聚类中心 (含速度用于下一帧预测匹配; slot 用于 FIX1 同槽优先关联)
-            new_tracks[track_id] = (dist, yrel, vrel, now, slot, yv_rel)
+            new_tracks[track_id] = (dist, yrel, vrel, now, slot, yv_rel, dist)   # 第7项=锚点(原始测量)
 
             # 【2026-11-10 出生确认门】新 track 前 SONG_PLUS_BIRTH_CONFIRM 次轮询只积累
             #   不发布 (聚类中心照写保证关联连续, pts 不写 → radard 看不到 → sticky 保持
@@ -2009,7 +2015,32 @@ class RadarInterface(RadarInterfaceBase):
                 # 130 目标已宣告消失 → 只留 SONG_PLUS_EXPIRING_HOLD 后立即删点
                 # (丰田 NEW_TRACK/255 语义); 正常目标仍用 2s 覆盖 14.5Hz 轮询缺口。
                 _hold = SONG_PLUS_EXPIRING_HOLD if tid in self._song_plus_expiring else SONG_PLUS_TRACK_TIMEOUT
-                if now - pos[3] > _hold and tid in self._song_plus_expiring:
+                # 【2026-11-13】近车道近距目标不走 130 短收尾: 排队/停止目标被槽位重排时
+                #   state 会短暂打 130, 雷达还连续几帧把 b5 打成 30~31 (重捕获噪声 →
+                #   |yrel|>10 被丢) → 点从流里消失 0.6s+, 0.35s 收尾把真车删掉 (实锤
+                #   .comma25 seg15 23:27 #473/#27)。本车道近距目标的代价方向是不对称的:
+                #   多留只是可能多一次轻刹, 少留就是跟着假 lead 撞上去 → 放宽为 SONG_PLUS_NEAR_HOLD。
+                #   真消失时 stale 清理 (_pts_not_seen) 仍会删, 不会永驻。
+                # 护栏 (2026-11-13): 只在**车基本停住**时才放宽, 否则 2s 保留会让旧距离+旧速度
+                #   一起发出去 (行驶中"看不见前车在动"比"丢一次点"危险得多)。
+                #   v_ego 由 card 每帧写入 (card.py: RI.v_ego = CS.vEgo)。
+                # 分级保留 (2026-11-13): 停车 2.0s / 蠕行(<3m/s) 0.8s / 其余走 0.5s 或 130 的 0.35s。
+                #   只用 vEgo<0.5 会漏掉 23:27 的滑行段 (v 1~3, 停止目标丢 0.6s → lead 瞬切);
+                #   一律放宽到 2s 又会让行驶中的旧距离+旧速度留太久。分级是两者的折中。
+                if tid in self._song_plus_expiring and abs(pos[1]) < 1.0 and 0.75 < pos[0] < 25.0:
+                    _v_ego_now = getattr(self, 'v_ego', 0.0)
+                    if _v_ego_now < 0.5:
+                        _hold = SONG_PLUS_NEAR_HOLD
+                    elif _v_ego_now < 3.0:
+                        _hold = SONG_PLUS_NEAR_HOLD_CREEP
+                # 【2026-11-13 补洞】原来这里还要求 `tid in _song_plus_expiring`: 超窗但不在
+                #   130 名单里的 track 会落进"既不更新也不删除"的空洞 —— self.pts 里
+                #   那个点以最后值原样发布, 直到另一套 stale 计数 (~0.4s) 才删。
+                #   实锤 .comma25 seg15 23:27 #35: 雷达在修正后 3.9m 处进入近场盲区
+                #   (32 槽全空), 我们却把 d=3.50 / v=-1.80 冻结着发了 0.8s, 规划器
+                #   看不到间距闭合 → 继续滑行到 1.86m 才由人工接管。
+                #   超窗即删: 目标丢了就让 lead 消失, 交给视觉, 不要发旧值。
+                if now - pos[3] > _hold:
                     # 130 已宣告消失且超过保留窗: 不等 stale 递减, 立即从 pts 移除,
                     # 防止幽灵前车 (vLead=vEgo) 继续参与发布/视觉配对。
                     self.pts.pop(tid, None)
@@ -2026,18 +2057,50 @@ class RadarInterface(RadarInterfaceBase):
                     self._song_plus_expiring.pop(tid, None)
                     continue
                 if now - pos[3] <= _hold:
-                    # vRel 衰减: 距上次观测越久越不可信, 线性衰减到 0 (1s 内归零)
                     dt_unseen = now - pos[3]
-                    decay = max(0.0, 1.0 - dt_unseen)
-                    vrel_decay = pos[2] * decay
+                    # 【2026-11-13 取消 vRel 衰减】原来 v = pos[2]*(1-dt) 会在 1s 内归零, 而下方
+                    #   距离 _pred_d 是按 pos[2] 外推的 —— 两者自相矛盾, 且方向危险:
+                    #   实锤 .comma25 seg15 t=34.5: 真实接近 -4 m/s, 发布 v=-0.2 (d 却还在按 -4 走),
+                    #   规划器看到"同速" → 不制动 (934.01 那段的直接原因)。
+                    #   保留期短 (TIMEOUT 0.5s / NEAR_HOLD 2s) 已由"超窗即删"兜住, 不再靠归零防幽灵。
+                    vrel_decay = pos[2]
+                    # 【2026-11-13 保留期距离外推】旧式保留把距离冻结在最后观测值 → 本车
+                    #   持续接近时"车没动" → 低估接近率 (实锤 .comma25 seg15 23:27 #27:
+                    #   933.5-934.0 保留期 d 冻结 13.62, 真值已到 8.11, vRel 衰减到 0)。
+                    #   物理: 位置随速度演化 → 保留期按最后 vRel 外推 (pred = d + vRel*dt)。
+                    #   目标静止时 vRel≈-vEgo, 外推正好跟上本车接近; 目标驶离时同理。
+                    # 【2026-11-13 关联中心改用外推值】锚点 = 最后一次真实测量的距离 (第7项),
+                    #   每帧都从锚点重算 _pred_d (不会复利); 而 new_tracks[0] 写**外推值**,
+                    #   让下一帧的帧间关联对上目标现在的真实位置。
+                    #   动机: 原来关联中心用冻结的 pos[0], 保留 0.6s/接近 5m/s 时落后 3m,
+                    #   超过 MATCH_DREL_TOL=2m → 目标回来关联不上、分新 trackId, 正好抵消
+                    #   NEAR_HOLD 保住停止目标的目的 (.comma25 seg15 23:27 #473/#27)。
+                    _anchor_d = pos[6] if len(pos) > 6 else pos[0]
+                    # 外推下限 0.5m: NEAR_HOLD 最长 2s, 若期间 vRel=-4 会把距离推到负数
+                    #   (8m 起算 → -0)。负距离进 radard 的 Track 会污染 leadOne, 这里截断。
+                    # 【2026-11-13 外推限幅(方向不对称)】外推会把 vRel 的误差放大到距离上,
+                    #   两个方向的后果不对称:
+                    #     · 假接近 → 距离报小 → 多刹 → 安全方向, 不设限;
+                    #     · 假远离 → 距离报大 → 间距看似拉开 → **欠刹**, 正是 23:27 的成因方向。
+                    #   所以向外(距离变大)方向限幅 +2m, 向内不设限。
+                    #   试过"向外完全冻结", 会重新制造"距离不动而 v 非零"的自相矛盾
+                    #   (自洽 p50 0.33→0.43、冻结矛盾 1.3%→2.8%、跳变 1.02→2.40m), 故用限幅。
+                    _d_raw_ext = _anchor_d + pos[2] * dt_unseen
+                    if pos[2] > 0.0:
+                        _pred_d = min(_d_raw_ext, _anchor_d + 2.0)
+                    else:
+                        _pred_d = _d_raw_ext
+                    _pred_d = max(_pred_d, 0.5)
                     # 时间戳必须保留原始上次匹配时间 pos[3]，不能写 now:
                     # 写 now 会每帧刷新存活时间戳, now-pos[3] 恒~0 → 永不过期
                     # → 幽灵 track 永驻, 绿框不消失 + vRel 衰减失效 (2026-08-18 bug 修复)
-                    new_tracks[tid] = (pos[0], pos[1], vrel_decay, pos[3], pos[4], pos[5] if len(pos) > 5 else 0.0)
+                    new_tracks[tid] = (_pred_d, pos[1], pos[2], pos[3], pos[4],
+                                       pos[5] if len(pos) > 5 else 0.0, _anchor_d)
                     # 同步衰减 pts 输出的 vRel: 旧 track 在 _pts_cache 外(仅匹配帧写入),
                     # 保留期间 stale 清理不删它 → pts 持续带旧 vRel 输出 (段26 id896 假速度 -5.4 骗重刹)。
                     # 这里直接改 self.pts[tid] 让衰减后的 vRel 生效。
                     if tid in self.pts:
+                        self.pts[tid].dRel = _pred_d   # 2026-11-13 保留期距离外推 (见上方 _pred_d)
                         self.pts[tid].vRel = vrel_decay
                         self._song_plus_vrel_out[tid] = vrel_decay  # 限变锚点跟随衰减, 防重逢首帧从旧值放行
                         self._song_plus_vrel_out_t[tid] = _log_t    # 2026-11-09 斜率时间锚同步 (日志时基)
