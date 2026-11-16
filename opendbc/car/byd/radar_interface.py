@@ -1662,6 +1662,7 @@ class RadarInterface(RadarInterfaceBase):
             # vrel=0.0 是"**无结论**"而非"真实 0", 不能参与 b6 互补融合 (否则把目标拉向
             # 0 = 低估接近率 = 危险方向)。仅真正算出差分值时置 True。见 SONG_PLUS_VREL_B6_FUSE_BETA。
             _v_diff_ok = False
+            _v_diff_raw = None   # 未限速的原始差分 (供 dRel 包络算宽度, 见发布段注释)
             # 低速跟停起步: 前车起步时本车静止(v_ego=0), 差分vRel必须能测到前车远离
             # 2026-08-16 去除 abs(v_ego)>=1.0 门控 (原门控导致跟停起步 vRel 恒 0)
             # 距离阈值 3 LSB (0.1875m): 0.5s 窗对应 0.375 m/s 最小可测速度,
@@ -1710,6 +1711,7 @@ class RadarInterface(RadarInterfaceBase):
                     else:
                         raw_vrel = (dist - d_old) / dt
                         if abs(dist - d_old) >= 0.1875:
+                            _v_diff_raw = raw_vrel
                             vrel = max(min(raw_vrel, 30.0), -30.0)
                             _v_diff_ok = True
             # 2026-08-26 长窗差分主导 (e266140d seg8 06:40 幻影刹车): 大横向偏移(|yRel|>2m,
@@ -1921,7 +1923,9 @@ class RadarInterface(RadarInterfaceBase):
                 #   原用发布 vRel 会闭环 —— vRel 被限速压小 → 包络过窄 → 真距离变化被截断
                 #   (发布 d 偏大) → 下帧差分更小 → vRel 更小。.comma(26) 11:14 23:51 实测
                 #   该闭环让 d 落后真实 5~7m、vRel 落后 5m/s, 直到司机踩刹车。
-                _env_v = max(abs(vrel), abs(_v_dop) if _v_dop is not None else 0.0)
+                _env_v = max(abs(vrel),
+                             abs(_v_dop) if _v_dop is not None else 0.0,
+                             abs(_v_diff_raw) if _v_diff_raw is not None else 0.0)
                 _d_env = max(SONG_PLUS_DREL_ENV_MIN, _env_v * _dt_d + SONG_PLUS_DREL_ENV_PAD)
                 if abs(dist - _d_out[0]) > _d_env:
                     dist = _d_out[0] + (_d_env if dist > _d_out[0] else -_d_env)
