@@ -225,6 +225,9 @@ SONG_PLUS_VREL_OUT_SLEW = 1.25    # 【2026-11-04 输出 vRel 帧间限变】发
                                   #   → 1.25 零触碰; 毒帧被压到 1.25/帧, 任意毒源兜底。
                                   #   新 track 锚=0 → 首帧 ≤±1.25, 真值持续 2~3 帧追上。
                                   #   只限发布值 (pt/聚类中心), 低通内部状态不回写。
+# 【2026-11-16】vRel 物理下限余量: vRel 不可能比 -v_ego (前车静止) 更负太多,
+#   多出的只能是串目标毒值 (实测 6.6m 处 -11.7 @ v_ego 9.7)。只做发布钳制, 不反哺滤波。
+SONG_PLUS_VREL_PHYS_PAD = 2.0
 SONG_PLUS_VREL_OUT_ACC = 10.0     # 【2026-11-09 vRel 输出斜率上限 (按时间)】补 OUT_SLEW 的洞:
                                   #   OUT_SLEW 是"每帧 m/s", track 14.5Hz 更新 → 等效斜率 1.25×14.5≈18 m/s²,
                                   #   连续 3+ 帧假趋势照样走出 (11-09 21:10 实测: tid428 出生 0.6s 内
@@ -331,6 +334,12 @@ SONG_PLUS_VREL_B6_FUSE_BETA = 0.10   # 2026-11-06 离线标定 (1298 样本, 视
 #   反而变差** (MAE 0.357/0.406) → 0.08 是已验证的最优档, 勿再往下压。
 SONG_PLUS_VREL_B6_FUSE_BETA_NEW = 0.05   # 2026-11-06 同步下调 (新目标更信差分)
 SONG_PLUS_VREL_B6_FUSE_B7_MAX = 8      # b7 < 此值 = 新目标 → 用 BETA_NEW
+# 【2026-11-16】11 位多普勒与差分的失配门 (m/s)。原硬编码 2.0。
+#   ⚠️ 已知副作用 (.comma(26) 11-14 23:51 跟停刹不住): 前车急减速时差分 (0.5s 窗+tau)
+#   滞后 5~8 m/s, 与 11 位多普勒 (本体已报 -9.9) 的失配自然超 2.0 → 被判"毒化"丢弃 →
+#   发布 vRel 只有 -3.3, MPC 认为前车还有 12 m/s, 不刹车。失配门必须能区分
+#   "差分滞后"与"串槽毒帧", 不能只比绝对差。
+SONG_PLUS_VREL_FUSE_MISMATCH = 2.0
 # (已删 2026-11-13) 原 SONG_PLUS_VREL_B6_K / _B6_C6 / _song_plus_c6():
 #   b6 时代的换算表 vRel=-(b6+6.5)*d/C(d)。b6 已证不是速度(见上), 表与函数一并删除;
 #   现行速度只走 0x3C8+g 的 11bit 多普勒 (SONG_PLUS_VREL_V11_*)。勿按 b6 重建。
@@ -1784,6 +1793,7 @@ class RadarInterface(RadarInterfaceBase):
                 _dt_l = now - _t_old
                 if _dt_l >= 1.0:
                     _v_lwin = (dist - _d_old) / _dt_l
+            _v_dop = None   # 本帧可用的 11 位多普勒直测值 (None = 无覆盖/不可用), 供发布段一致性放行
             if dist_raw < SONG_PLUS_VREL_B6_MAX_DREL and not _slot_changed:
                 _c6 = self._song_plus_b6_cache.get(slot)
                 if _c6 is not None and now - _c6[1] <= SONG_PLUS_VREL_B6_FRESH_S:
@@ -1799,6 +1809,7 @@ class RadarInterface(RadarInterfaceBase):
                         if v_b6 < SONG_PLUS_VREL_B6_BIAS_V:
                             v_b6 -= SONG_PLUS_VREL_B6_BIAS
                         v_b6 = max(min(v_b6, 30.0), -30.0)
+                        _v_dop = v_b6
                         # 【P1 2026-10-03】互补融合 (取代"b6 直接替换差分")。
                         # 差分无结论时保持原行为(替换), 融合权重见 SONG_PLUS_VREL_B6_FUSE_BETA 注释。
                         if _v_diff_ok:
@@ -1813,12 +1824,12 @@ class RadarInterface(RadarInterfaceBase):
                             # 【2026-11-05 失配保护】b6 与差分严重失配 (填充残留/换目标串位)
                             #   → 丢弃 b6 保差分。合法失配 (两路各自误差之和) 实测 <2.5 m/s,
                             #   毒化样例 +5.2 m/s, 4.0 阈值留足余量。
-                            if abs(v_b6 - vrel) <= 2.0:   # 2026-11-06 收窄: 新字段 MAE 0.598 (原 b6 1.832)
+                            if abs(v_b6 - vrel) <= SONG_PLUS_VREL_FUSE_MISMATCH:   # 2026-11-06 收窄: 新字段 MAE 0.598 (原 b6 1.832)
                                 vrel = max(min(vrel + _beta * (v_b6 - vrel), 30.0), -30.0)
                         else:
                             # 【2026-11-05 弯道长窗兜底】与 b6 交叉验证 (见上方 _v_lwin 注释):
                             #   失配 >3 → 弃 b6 用长窗差分; 一致 → 用 b6 (更新鲜)。
-                            if _v_lwin is None or abs(v_b6 - _v_lwin) <= 2.0:   # 2026-11-06 收窄, 同上
+                            if _v_lwin is None or abs(v_b6 - _v_lwin) <= SONG_PLUS_VREL_FUSE_MISMATCH:   # 2026-11-06 收窄, 同上
                                 vrel = v_b6
                             else:
                                 vrel = max(min(_v_lwin, 30.0), -30.0)
@@ -1892,6 +1903,9 @@ class RadarInterface(RadarInterfaceBase):
             _dt_v = min(max(_log_t - _v_out_t, 0.05), 0.3)
             vrel = float(max(min(vrel, _v_out_prev + SONG_PLUS_VREL_OUT_ACC * _dt_v),
                              _v_out_prev - SONG_PLUS_VREL_OUT_ACC * _dt_v))
+            # 物理钳制: 目标相对速度不可能比 -v_ego (静止) 更负太多 (倒车/毒值)。
+            #   实测该钳制能吃掉"6.6m 处 vRel -11.7 @ v_ego 9.7"这类串目标毒值。
+            vrel = max(vrel, -(self.v_ego + SONG_PLUS_VREL_PHYS_PAD))
             self._song_plus_vrel_out[track_id] = vrel
             self._song_plus_vrel_out_t[track_id] = _log_t
             # 【2026-11-09 dRel 发布包络】距离变化超出 |vRel|×dt+量化余量 = 量测错误
@@ -1903,7 +1917,12 @@ class RadarInterface(RadarInterfaceBase):
             _d_out = self._song_plus_dout.get(track_id)
             if _d_out is not None:
                 _dt_d = min(max(_log_t - _d_out[2], 0.01), 0.3)
-                _d_env = max(SONG_PLUS_DREL_ENV_MIN, abs(vrel) * _dt_d + SONG_PLUS_DREL_ENV_PAD)
+                # 【2026-11-16】包络宽度必须取"最接近的独立测量"(多普勒直测) 与发布值的较大者:
+                #   原用发布 vRel 会闭环 —— vRel 被限速压小 → 包络过窄 → 真距离变化被截断
+                #   (发布 d 偏大) → 下帧差分更小 → vRel 更小。.comma(26) 11:14 23:51 实测
+                #   该闭环让 d 落后真实 5~7m、vRel 落后 5m/s, 直到司机踩刹车。
+                _env_v = max(abs(vrel), abs(_v_dop) if _v_dop is not None else 0.0)
+                _d_env = max(SONG_PLUS_DREL_ENV_MIN, _env_v * _dt_d + SONG_PLUS_DREL_ENV_PAD)
                 if abs(dist - _d_out[0]) > _d_env:
                     dist = _d_out[0] + (_d_env if dist > _d_out[0] else -_d_env)
             self._song_plus_dout[track_id] = (dist, yrel, _log_t)
