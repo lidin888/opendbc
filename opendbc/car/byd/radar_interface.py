@@ -374,6 +374,16 @@ SONG_PLUS_VREL_FUSE_MISMATCH = 2.0
 #   0.002 系数下算成 -0.30m (压缩 7 倍) → 雷达横向失效 → vision-only 谎报正前
 #   无反驳 → 主副反+多余减速 (route39 seg17/18 两图实锤)。
 SONG_PLUS_YREL_SCALE = 0.014   # 方位角 scale (rad/LSB): y = scale * d * (b5 - 95) [0.798°/LSB 视觉幅度标定]
+# 【2026-11-17 c144 恢复】精细方位角 (11bit, sub3.b2|(sub3.b3&0x07)<<8):
+#   scale = tan(FOV半角22.5°)/(2040−1007.5) = 0.000401 自标定 ≈ 0.0004437 闭环挂靠 (0.014/31.55), 差 9.7%
+#   = 2026-10-22 上车成功版 0.00042 的 5.6% 修正 (当年 71% 轨迹更稳, 抖动 std 2.72→1.39)
+#   证据链: ①闭环 31.55(残差8LSB) ②量程±24°≈FOV ③视觉3万样本误差0.81m(b5 1.14m) ④抖动0.065m(b5 15.4m@80m)
+#          ⑤毛刺率0.26%(b5 2.72%) ⑥官方DBC反向验证(0x640 scale 0.002 错套BYD字段误差4倍→BYD确已重标定)
+#   【历史澄清】10-22 上车成功的是这套标定; 11-08/11-11 失败的是错误标定(0.000061/0.00001, 差7~44倍);
+#   退出理由"±0.66°回绕"基于错误量程理解(实际±24°)。b5 毛刺帧(2.72%, b5=33→y=−76)中 c144 稳定±0.07m。
+SONG_PLUS_YREL_FINE_SCALE = 0.0004437   # rad/LSB (0.0254°/LSB)
+SONG_PLUS_YREL_FINE_ZERO = 1007.5
+SONG_PLUS_YREL_FINE_BIAS = -0.79
 # 【2026-10-22】yRel 改用 11 位精细方位 (bit144|11 = sub3.b2 + sub3.b3低3位)。
 #   刻度/零点用 b5 交叉校验网格搜最优 (28,234 样本): |y_new−y_old| 中位 0.324m, 差值中位 +0.056m。
 # 【精度对比】全量 .comma* 5,867 条长轨迹 (距离跨度>15m) 实测:
@@ -1469,6 +1479,9 @@ class RadarInterface(RadarInterfaceBase):
             sub3 = frame_map.get(base_addr + 3)
             if sub3 is not None:
                 state = sub3[5]
+                _c144 = sub3[2] | ((sub3[3] & 0x07) << 8)   # 【2026-11-17 恢复】11bit 精细方位
+            else:
+                _c144 = -1   # sub3 缺失 (CAN 丢帧) → 兜底用 b5
             if state not in SONG_PLUS_STATE_VALID:
                 continue  # 131+ = 边界/噪声目标, 排除
             # 【2026-10-22 新】yRel 改用 11 位精细方位字段 (bit144|11, 进位链切分所得)。
@@ -1494,7 +1507,19 @@ class RadarInterface(RadarInterfaceBase):
             #   (9 视觉大横向样本) 背书的横向来源 —— 数据源唯一、每个数字有出处。
             #   c144 字段保留解码但不再参与 yRel (下方代码注释保留, 待编码模型
             #   有独立真值标定后再评估启用)。
-            yrel = SONG_PLUS_YREL_SCALE * dist_raw * (b5 - SONG_PLUS_YREL_OFFSET)   # 唯一横向来源
+            y_b5 = SONG_PLUS_YREL_SCALE * dist_raw * (b5 - SONG_PLUS_YREL_OFFSET)
+            y_fine = SONG_PLUS_YREL_FINE_SCALE * dist_raw * (_c144 - SONG_PLUS_YREL_FINE_ZERO) + SONG_PLUS_YREL_FINE_BIAS
+            # 【2026-11-17 c144 恢复】主来源 = c144 (精细32倍/抖动小236倍/毛刺少10倍), 兜底 = b5:
+            #   ① sub3 缺失 ② c144 越界(288~2040, 0/2047 是填充哨兵) ③ 保守区间 |y_fine|>5 (近距大横向退 b5)
+            # 三层兜底沿用 2026-10-22 上车前审计版; 11-08/11-11 失败根因是错误标定(0.000061/0.00001)
+            # 与退出理由(±0.66°回绕=错误量程理解), 已由 2026-11-17 闭环/量程/视觉/官方反向四路验证纠正。
+            if _c144 != -1 and 288 <= _c144 <= 2040 and abs(y_fine) < 5.0:
+                yrel = y_fine
+            else:
+                yrel = y_b5
+            # 影子: b5 与 c144 分歧 >2m 记录 (b5 毛刺帧观察, 不影响发布; 预期 ~2.7% 帧)
+            if _c144 != -1 and abs(y_fine - y_b5) > 2.0:   # 仅统计 c144 有效帧 (sub3 缺失是 CAN 时序常态, 不刷日志)
+                cloudlog.warning("c144shadow d=%.1f b5y=%.2f fine=%.2f c144=%d", dist_raw, y_b5, y_fine, _c144)
             # (已删 2026-11-13) 原 c144 交叉校验块 —— 2026-11-11 已用 `if False:` 停用, 现整块删除。
             #   c144 的编码模型三次标定互相矛盾 (0.000061 / 0.00002 / 0.00001, 全部基于
             #   "跟车 y 恒定" 假设, 弯道不成立), 近距旁车 (8.5°) 超出其 ±0.66° 表达范围会回绕。
