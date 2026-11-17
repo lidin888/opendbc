@@ -382,7 +382,7 @@ SONG_PLUS_YREL_SCALE = 0.014   # 方位角 scale (rad/LSB): y = scale * d * (b5 
 #   【历史澄清】10-22 上车成功的是这套标定; 11-08/11-11 失败的是错误标定(0.000061/0.00001, 差7~44倍);
 #   退出理由"±0.66°回绕"基于错误量程理解(实际±24°)。b5 毛刺帧(2.72%, b5=33→y=−76)中 c144 稳定±0.07m。
 SONG_PLUS_YREL_FINE_SCALE = 0.0004437   # rad/LSB (0.0254°/LSB)
-SONG_PLUS_YREL_FINE_ZERO = 1007.5
+SONG_PLUS_YREL_FINE_ZERO = 1072.0    # 直路正前前车实测(328样本,30-60m分带一致1073/1074/1065)
 SONG_PLUS_YREL_FINE_BIAS = -0.79
 # 【2026-10-22】yRel 改用 11 位精细方位 (bit144|11 = sub3.b2 + sub3.b3低3位)。
 #   刻度/零点用 b5 交叉校验网格搜最优 (28,234 样本): |y_new−y_old| 中位 0.324m, 差值中位 +0.056m。
