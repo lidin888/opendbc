@@ -21,6 +21,7 @@ from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP
 from opendbc.sunnypilot.car.subaru.values_ext import SubaruFlagsSP, SubaruSafetyFlagsSP
 from opendbc.sunnypilot.car.tesla.values import MadsScreenButtonType, TeslaFlagsSP, TeslaSafetyFlagsSP
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
+from opendbc.sunnypilot.car.byd.values import BYDFlagsSP
 
 
 class LatControlInputs(NamedTuple):
@@ -90,6 +91,7 @@ def setup_interfaces(CI, CP: structs.CarParams, CP_SP: structs.CarParamsSP,
   _initialize_radar_tracks(CP, CP_SP, can_recv, can_send)
   _initialize_stop_and_go(CP, CP_SP, params_dict)
   _initialize_toyota(CP, CP_SP, params_dict)
+  _initialize_byd(CP, CP_SP, params_dict)
 
 
 def _initialize_custom_longitudinal_tuning(CI, CP: structs.CarParams, CP_SP: structs.CarParamsSP,
@@ -151,6 +153,16 @@ def _initialize_stop_and_go(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       CP_SP.flags |= SubaruFlagsSP.STOP_AND_GO_MANUAL_PARKING_BRAKE.value
     if stop_and_go or stop_and_go_manual_parking_brake:
       CP_SP.safetyParam |= SubaruSafetyFlagsSP.STOP_AND_GO
+
+
+def _initialize_byd(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params_dict: dict[str, str]) -> None:
+  """【2026-11-18】BYD 纵向调校开关：UI 车辆页 → BYD → 纵向调校。
+  ON  → planner 用 BYD 运动加速表 + 减速 clip −0.9（回收为主，节能）
+  OFF → 完全官方 stock 行为。只对 brand=='byd' 生效。"""
+  if CP.brand == 'byd':
+    byd_long_tuning = int(params_dict.get("BYDLongTuning", 0)) == 1
+    if byd_long_tuning:
+      CP_SP.flags |= BYDFlagsSP.LONG_TUNING.value
 
 
 def _initialize_toyota(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params_dict: dict[str, str]) -> None:
